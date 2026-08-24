@@ -1,3 +1,55 @@
 spring:
   application:
     name: finch
+
+  # 접속 정보는 환경변수로 주입받는다.
+  #   로컬  — TestFinchApplication(./gradlew bootTestRun)이 Testcontainers 로 띄운 컨테이너가
+  #           @ServiceConnection 으로 자동 연결되므로 아래 값은 읽히지 않는다.
+  #           직접 띄운 DB 에 붙일 때만 쓰인다.
+  #   운영  — k8s Secret(postgres-secret)이 POSTGRES_* 를 컨테이너 환경변수로 주입한다.
+  #           Service 이름이 호스트가 되므로 POSTGRES_HOST=postgres, REDIS_HOST=redis.
+  #
+  # password 에만 기본값을 두지 않는다. 비밀값에 기본값을 두면 주입이 누락됐을 때
+  # 조용히 그 값으로 접속을 시도해 원인이 DB 문제처럼 보인다.
+  # 기본값이 없으면 누락된 환경변수 이름을 그대로 알려주며 기동에 실패한다.
+  # 앞으로 추가할 비밀값(JWT 서명 키, 카카오 시크릿, KIS 키 등)도 같은 규칙을 따른다.
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:finch_db}
+    username: ${POSTGRES_USER:finch}
+    password: ${POSTGRES_PASSWORD}
+
+  jpa:
+    hibernate:
+      # 스키마 변경은 Flyway 전용. update 를 쓰면 Flyway 이력과 실제 스키마가 갈라진다 (infraSpec §3.2)
+      ddl-auto: validate
+    # Entity 를 Controller 밖으로 내보내지 않는다는 계층 규칙과 짝을 이룬다 (backConvention §4)
+    open-in-view: false
+
+  # db/migration 이 비어 있어 현재는 no-op 이다.
+  # ERD 확정 후 V1__init.sql 을 넣으면 그때부터 동작한다 (backConvention 범위 밖 — 별도 티켓)
+  flyway:
+    enabled: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
+server:
+  # 무중단 롤링 배포의 전제. 종료 신호를 받아도 처리 중인 요청을 끝내고 내려간다 (infraSpec §5.2)
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # prometheus 는 Prometheus scrape 대상이다. 빼면 모니터링이 성립하지 않는다 (infraSpec §6.1)
+        include: health,info,prometheus
+  endpoint:
+    health:
+      # /actuator/health/readiness · liveness 를 연다. k8s 프로브가 이 경로를 쓴다 (infraSpec §5.2)
+      probes:
+        enabled: true
