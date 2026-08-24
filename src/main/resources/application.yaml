@@ -53,3 +53,10 @@ management:
       # /actuator/health/readiness · liveness 를 연다. k8s 프로브가 이 경로를 쓴다 (infraSpec §5.2)
       probes:
         enabled: true
+  prometheus:
+    metrics:
+      export:
+        # Boot 4 는 메트릭 export 가 기본 비활성이다(management.defaults.metrics.export.enabled=false).
+        # 켜지 않으면 exposure 에 prometheus 를 넣어도 엔드포인트 자체가 만들어지지 않아 404 가 나고,
+        # Prometheus 는 에러 없이 빈 스크레이프만 계속한다 (infraSpec §6.1)
+        enabled: true
