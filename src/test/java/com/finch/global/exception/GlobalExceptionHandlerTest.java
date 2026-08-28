@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -86,6 +87,51 @@ class GlobalExceptionHandlerTest {
 	}
 
 	@Test
+	@DisplayName("매핑되지 않은 경로는 404 RESOURCE_NOT_FOUND 다")
+	void unknownPath() throws Exception {
+		mockMvc.perform(get("/stub/nope"))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+	}
+
+	@Test
+	@DisplayName("깨진 JSON 본문은 400 INVALID_REQUEST 이고 파서 메시지가 본문에 새지 않는다")
+	void unreadableBody() throws Exception {
+		mockMvc.perform(post("/stub/body").contentType(MediaType.APPLICATION_JSON).content("{\"quantity\":"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+			.andExpect(jsonPath("$.message").value(GeneralErrorCode.INVALID_REQUEST.getMessage()))
+			.andExpect(jsonPath("$.detail").doesNotExist());
+	}
+
+	@Test
+	@DisplayName("필수 파라미터 누락은 400 INVALID_REQUEST 와 {이름: 사유} detail 이다")
+	void missingParameter() throws Exception {
+		mockMvc.perform(get("/stub/param"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+			.andExpect(jsonPath("$.detail.size").isString());
+	}
+
+	@Test
+	@DisplayName("파라미터 타입 불일치는 400 INVALID_REQUEST 와 {이름: 사유} detail 이다")
+	void parameterTypeMismatch() throws Exception {
+		mockMvc.perform(get("/stub/param").param("size", "abc"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+			.andExpect(jsonPath("$.detail.size").isString());
+	}
+
+	@Test
+	@DisplayName("파라미터 제약 위반은 본문 검증과 같은 400 INVALID_REQUEST 와 {이름: 사유} detail 이다")
+	void parameterConstraint() throws Exception {
+		mockMvc.perform(get("/stub/param").param("size", "0"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+			.andExpect(jsonPath("$.detail.size").isString());
+	}
+
+	@Test
 	@DisplayName("처리되지 않은 예외는 500 INTERNAL_ERROR 이고 원본 메시지가 본문에 새지 않는다")
 	void unexpected() throws Exception {
 		mockMvc.perform(get("/stub/boom"))
@@ -105,6 +151,11 @@ class GlobalExceptionHandlerTest {
 		@PostMapping(value = "/body", consumes = MediaType.APPLICATION_JSON_VALUE)
 		Map<String, String> body(@RequestBody @Valid StubReq req) {
 			return Map.of("ok", "true");
+		}
+
+		@GetMapping("/param")
+		Map<String, Integer> param(@RequestParam @Min(1) int size) {
+			return Map.of("size", size);
 		}
 
 		@GetMapping("/custom")
