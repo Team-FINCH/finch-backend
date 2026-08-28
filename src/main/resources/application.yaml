@@ -60,3 +60,24 @@ management:
         # 켜지 않으면 exposure 에 prometheus 를 넣어도 엔드포인트 자체가 만들어지지 않아 404 가 나고,
         # Prometheus 는 에러 없이 빈 스크레이프만 계속한다 (infraSpec §6.1)
         enabled: true
+
+logging:
+  pattern:
+    # %X{requestId} 는 RequestIdFilter 가 MDC 에 둔 요청 식별자다 (apiSpec 1.1 요청 추적).
+    # 이 자리가 없으면 필터가 있어도 로그에는 아무것도 안 붙는다.
+    # 기본 패턴에서 바꾼 것은 이 한 토큰뿐이다 — 로컬에서 읽는 형식은 그대로 둔다.
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %5p [%X{requestId:-}] --- [%15.15t] %-40.40logger{39} : %m%n%wEx"
+
+---
+# 운영 프로파일(SPRING_PROFILES_ACTIVE=prod)에서만 로그를 JSON 한 줄로 찍는다.
+# Loki 든 다른 수집기든 문장을 정규식으로 쪼개지 않고 level·requestId 로 바로 거르게 하기 위해서다.
+# Boot 3.4+ 내장 기능이라 라이브러리·logback-spring.xml 이 필요 없고, MDC 값은 자동으로 필드가 된다.
+# 로컬은 위 문장 형식을 유지한다 — JSON 은 사람이 읽기 불편하다.
+spring:
+  config:
+    activate:
+      on-profile: prod
+logging:
+  structured:
+    format:
+      console: ecs
