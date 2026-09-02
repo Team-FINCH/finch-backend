@@ -92,6 +92,28 @@ class KakaoOAuthClientTest {
 			.isEqualTo(AuthErrorCode.AUTH_KAKAO_FAILED);
 	}
 
+	@Test
+	@DisplayName("Client Secret 을 켠 앱이면 토큰 교환에 client_secret 을 싣는다")
+	void includesClientSecretWhenPresent() {
+		KakaoOAuthClient client = new KakaoOAuthClient(WebClient.create(), "rest-api-key", "client-secret");
+
+		assertThat(client.tokenForm("code", REDIRECT_URI))
+			.containsEntry("client_secret", java.util.List.of("client-secret"))
+			.containsEntry("grant_type", java.util.List.of("authorization_code"))
+			.containsEntry("client_id", java.util.List.of("rest-api-key"))
+			.containsEntry("redirect_uri", java.util.List.of(REDIRECT_URI))
+			.containsEntry("code", java.util.List.of("code"));
+	}
+
+	@Test
+	@DisplayName("Client Secret 을 켜지 않은 앱이면 client_secret 을 아예 빼고 보낸다")
+	void omitsClientSecretWhenBlank() {
+		KakaoOAuthClient client = new KakaoOAuthClient(WebClient.create(), "rest-api-key", "");
+
+		// 빈 문자열을 실어 보내면 카카오가 불일치로 거절할 수 있다. 키가 없어야 한다.
+		assertThat(client.tokenForm("code", REDIRECT_URI)).doesNotContainKey("client_secret");
+	}
+
 	/** 토큰 교환은 kauth, 사용자 조회는 kapi 로 간다. 한 함수로 두 호출을 구분한다. */
 	private boolean isTokenCall(ClientRequest request) {
 		return request.url().toString().contains("kauth");

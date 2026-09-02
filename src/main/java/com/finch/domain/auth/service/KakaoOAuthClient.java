@@ -70,22 +70,34 @@ public class KakaoOAuthClient {
 	 * 프론트에서 콜백 화면이 두 번 렌더링되지 않게 하는 것이 짝이 되는 방어다.
 	 */
 	private String exchangeToken(String authorizationCode, String redirectUri) {
-		MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
-		form.add("grant_type", "authorization_code");
-		form.add("client_id", clientId);
-		form.add("redirect_uri", redirectUri);
-		form.add("code", authorizationCode);
-		form.add("client_secret", clientSecret);
-
 		KakaoTokenRes token = call(webClient.post()
 			.uri(TOKEN_URI)
 			.contentType(MediaType.APPLICATION_FORM_URLENCODED)
-			.body(BodyInserters.fromFormData(form)), KakaoTokenRes.class);
+			.body(BodyInserters.fromFormData(tokenForm(authorizationCode, redirectUri))), KakaoTokenRes.class);
 
 		if (token == null || token.accessToken() == null) {
 			throw new CustomException(AuthErrorCode.AUTH_KAKAO_FAILED);
 		}
 		return token.accessToken();
+	}
+
+	/**
+	 * 토큰 교환 폼. 카카오가 검사하는 값이 그대로 여기 있다.
+	 * <p>
+	 * <b>{@code client_secret} 은 값이 있을 때만 싣는다.</b> 콘솔에서 Client Secret 을 켜지 않은 앱은
+	 * 카카오가 이 파라미터를 요구하지 않고, 빈 문자열을 실어 보내면 불일치로 거절될 수 있다.
+	 * 켠 앱에서는 필수이므로 값이 있으면 반드시 실린다.
+	 */
+	MultiValueMap<String, String> tokenForm(String authorizationCode, String redirectUri) {
+		MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+		form.add("grant_type", "authorization_code");
+		form.add("client_id", clientId);
+		form.add("redirect_uri", redirectUri);
+		form.add("code", authorizationCode);
+		if (clientSecret != null && !clientSecret.isBlank()) {
+			form.add("client_secret", clientSecret);
+		}
+		return form;
 	}
 
 	private KakaoUser fetchUserInfo(String kakaoAccessToken) {

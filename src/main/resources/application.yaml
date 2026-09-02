@@ -49,6 +49,9 @@ jwt:
 # 프론트의 VITE_KAKAO_REST_API_KEY 와 같은 값이어야 인가 코드와 토큰 교환의 앱이 일치한다.
 kakao:
   client-id: ${KAKAO_CLIENT_ID}
+  # 콘솔에서 Client Secret 을 켜지 않은 앱은 이 값이 없다. 그때는 빈 문자열로 두면
+  # 토큰 교환 폼에서 client_secret 파라미터 자체가 빠진다 (KakaoOAuthClient.tokenForm).
+  # 변수 자체는 필수로 둔다 — 기본값을 주면 켜 놓고 주입을 빠뜨린 경우가 조용히 지나간다.
   client-secret: ${KAKAO_CLIENT_SECRET}
 
 server:
