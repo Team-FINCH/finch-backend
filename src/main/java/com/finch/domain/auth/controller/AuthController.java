@@ -9,6 +9,7 @@ import com.finch.domain.auth.service.LoginResult;
 import com.finch.domain.auth.service.TokenPair;
 import com.finch.global.exception.CustomException;
 import com.finch.global.security.JwtProvider;
+import com.finch.global.security.LoginUser;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -17,7 +18,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -36,8 +36,6 @@ public class AuthController {
 	static final String REFRESH_COOKIE_NAME = "refreshToken";
 
 	private final AuthService authService;
-
-	private final JwtProvider jwtProvider;
 
 	/**
 	 * 카카오 인가 코드로 로그인한다 (apiSpec 2.1). 인증 불필요.
@@ -80,14 +78,11 @@ public class AuthController {
 	 * 지우는 대상은 쿠키가 아니라 <b>서버에 저장된 Refresh</b> 다. 쿠키만 지우면 브라우저에서만 사라지고
 	 * 그 값을 가진 누군가는 계속 재발급할 수 있다.
 	 * <p>
-	 * ⚠️ 사용자 식별을 헤더에서 직접 하고 있다. 백5 에서 인증 필터와 {@code @LoginUser} 가 들어오면
-	 * {@code @LoginUser Long userId} 로 바뀐다. 토큰 해석은 {@code JwtProvider.resolveBearerToken} 을
-	 * 그대로 재사용하므로 그때 지울 코드는 이 메서드의 두 줄뿐이다.
+	 * 토큰 해석은 {@code JwtAuthenticationFilter} 가 이미 했다. Access Token 이 없거나 무효한 요청은
+	 * 이 메서드에 닿지 않는다 — {@code SecurityConfig} 의 화이트리스트에 없으므로 401 로 끝난다.
 	 */
 	@PostMapping("/logout")
-	public ResponseEntity<Void> logout(
-		@RequestHeader(name = HttpHeaders.AUTHORIZATION, required = false) String authorization) {
-		long userId = jwtProvider.parseAccessToken(JwtProvider.resolveBearerToken(authorization));
+	public ResponseEntity<Void> logout(@LoginUser Long userId) {
 		authService.logout(userId);
 
 		return ResponseEntity.noContent()

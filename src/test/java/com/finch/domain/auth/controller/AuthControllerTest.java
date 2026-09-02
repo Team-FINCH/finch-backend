@@ -12,9 +12,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.finch.domain.auth.dto.request.KakaoLoginReq;
 import com.finch.domain.auth.dto.response.AuthUserRes;
 import com.finch.domain.auth.dto.response.KakaoLoginRes;
+import com.finch.domain.auth.exception.AuthErrorCode;
 import com.finch.domain.auth.service.AuthService;
 import com.finch.domain.auth.service.LoginResult;
 import com.finch.domain.auth.service.TokenPair;
+import com.finch.global.exception.CustomException;
 import com.finch.global.security.JwtProvider;
 import com.finch.global.config.SecurityConfig;
 import org.junit.jupiter.api.DisplayName;
@@ -132,6 +134,25 @@ class AuthControllerTest {
 		verifyNoInteractions(authService);
 	}
 
+	/**
+	 * 이 테스트가 백5 의 필터 설계를 못 박는다. 프론트 인터셉터는 <b>만료된 Access 를 붙인 채로</b>
+	 * 재발급을 부른다 (apiSpec 1.2). 필터가 헤더를 보고 직접 401 을 쓰면 재발급 자체가 불가능해져
+	 * 세션 복구가 영구히 깨진다 — 그래서 필터는 거부하지 않고 EntryPoint 가 인증 필요 경로에서만 판단한다.
+	 */
+	@Test
+	@DisplayName("만료된 Access 가 실려 와도 재발급은 막히지 않는다 — 판정 기준은 쿠키뿐이다")
+	void refreshIgnoresTheAuthorizationHeader() throws Exception {
+		given(jwtProvider.parseAccessToken("expired")).willThrow(
+			new CustomException(AuthErrorCode.AUTH_TOKEN_EXPIRED));
+		given(authService.refresh("old-refresh")).willReturn(new TokenPair("new-access", "new-refresh"));
+
+		mockMvc.perform(post("/api/v1/auth/refresh")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer expired")
+				.cookie(new Cookie("refreshToken", "old-refresh")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.accessToken").value("new-access"));
+	}
+
 	@Test
 	@DisplayName("로그아웃은 204 이고 브라우저 쿠키도 즉시 만료시킨다")
 	void logoutClearsCookie() throws Exception {
@@ -148,7 +169,7 @@ class AuthControllerTest {
 	}
 
 	@Test
-	@DisplayName("Authorization 헤더가 없으면 로그아웃도 AUTH_INVALID_TOKEN — 누락을 만료로 주지 않는다")
+	@DisplayName("Authorization 헤더가 없으면 로그아웃도 AUTH_INVALID_TOKEN — 화이트리스트 밖이라 필터 체인에서 걸린다")
 	void logoutWithoutBearerIsInvalidToken() throws Exception {
 		mockMvc.perform(post("/api/v1/auth/logout"))
 			.andExpect(status().isUnauthorized())
