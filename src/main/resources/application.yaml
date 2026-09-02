@@ -40,6 +40,17 @@ spring:
   lifecycle:
     timeout-per-shutdown-phase: 20s
 
+# 자체 발급 JWT 의 서명 키. 이 값을 아는 사람은 아무 사용자로든 로그인하는 토큰을 만들 수 있다.
+# HS256 이므로 UTF-8 32바이트(256비트) 이상이어야 하고, 짧으면 기동 시점에 WeakKeyException 으로 거부된다.
+jwt:
+  secret: ${JWT_SECRET}
+
+# 카카오 OAuth. client-id 는 REST API 키다 (JavaScript 키가 아니다).
+# 프론트의 VITE_KAKAO_REST_API_KEY 와 같은 값이어야 인가 코드와 토큰 교환의 앱이 일치한다.
+kakao:
+  client-id: ${KAKAO_CLIENT_ID}
+  client-secret: ${KAKAO_CLIENT_SECRET}
+
 server:
   # 무중단 롤링 배포의 전제. 종료 신호를 받아도 처리 중인 요청을 끝내고 내려간다 (infraSpec §5.2)
   shutdown: graceful

@@ -1,0 +1,13 @@
+# 테스트 전용 값. classpath:/config/ 는 classpath:/ 보다 우선순위가 높고 **대체가 아니라 덮어쓰기**라
+# main 의 application.yaml 은 그대로 살아 있다. (여기에 application.yaml 을 두면 main 것이 통째로 가려진다)
+#
+# 운영에서는 기본값을 두지 않는다는 규칙 때문에 JWT_SECRET·KAKAO_* 가 없으면 컨텍스트가 뜨지 않는다.
+# 테스트까지 그 규칙을 적용하면 스프링 컨텍스트를 띄우는 테스트마다 환경변수를 요구하게 되므로
+# 여기서만 가짜 값을 준다. 실제 값과 무관하고, 밖으로 나가지 않는다.
+jwt:
+  # HS256 은 32바이트 이상을 요구한다. 짧으면 WeakKeyException 으로 컨텍스트가 죽는다.
+  secret: test-only-secret-key-0123456789-abcdef
+
+kakao:
+  client-id: test-client-id
+  client-secret: test-client-secret
