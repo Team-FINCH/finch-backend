@@ -1,0 +1,105 @@
+package com.finch.domain.auth.controller;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.finch.domain.auth.dto.request.KakaoLoginReq;
+import com.finch.domain.auth.dto.response.AuthUserRes;
+import com.finch.domain.auth.dto.response.KakaoLoginRes;
+import com.finch.domain.auth.service.AuthService;
+import com.finch.domain.auth.service.LoginResult;
+import com.finch.global.config.SecurityConfig;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+
+/**
+ * apiSpec 2.1 의 응답 계약을 고정한다. 필드 이름 하나가 달라지면 프론트의 Zod 파싱이 깨지므로
+ * 값이 아니라 **이름과 위치**를 보는 테스트다.
+ */
+@WebMvcTest(AuthController.class)
+@Import(SecurityConfig.class)
+class AuthControllerTest {
+
+	private static final String REQUEST_JSON = """
+		{"authorizationCode":"code","redirectUri":"http://localhost:5173/oauth/kakao"}""";
+
+	@Autowired
+	private MockMvc mockMvc;
+
+	@MockitoBean
+	private AuthService authService;
+
+	@Test
+	@DisplayName("로그인 응답 본문은 accessToken · isNewUser · user 세 개다")
+	void returnsContractedBody() throws Exception {
+		given(authService.loginWithKakao(any(KakaoLoginReq.class))).willReturn(loginResult("https://img.kakao/1.jpg"));
+
+		mockMvc.perform(post("/api/v1/auth/kakao").contentType(MediaType.APPLICATION_JSON).content(REQUEST_JSON))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.accessToken").value("access-token"))
+			// isNewUser 는 boolean 이라 Jackson 이 "newUser" 로 깎을 수 있다. 이름을 그대로 못 박는다.
+			.andExpect(jsonPath("$.isNewUser").value(true))
+			.andExpect(jsonPath("$.user.userId").value(1))
+			.andExpect(jsonPath("$.user.nickname").value("홍길동"))
+			.andExpect(jsonPath("$.user.profileImageUrl").value("https://img.kakao/1.jpg"));
+	}
+
+	@Test
+	@DisplayName("Refresh Token 은 본문에 없고 Set-Cookie 로만 나간다")
+	void sendsRefreshTokenOnlyAsCookie() throws Exception {
+		given(authService.loginWithKakao(any(KakaoLoginReq.class))).willReturn(loginResult(null));
+
+		MvcResult result = mockMvc.perform(
+				post("/api/v1/auth/kakao").contentType(MediaType.APPLICATION_JSON).content(REQUEST_JSON))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.refreshToken").doesNotExist())
+			.andReturn();
+
+		String cookie = result.getResponse().getHeader(HttpHeaders.SET_COOKIE);
+		assertThat(cookie).contains("refreshToken=refresh-token")
+			.contains("HttpOnly")
+			.contains("Secure")
+			.contains("SameSite=Lax")
+			.contains("Path=/api/v1/auth")
+			// 14일. apiSpec 2.1 의 Max-Age=1209600 과 같은 값이어야 한다.
+			.contains("Max-Age=1209600");
+	}
+
+	@Test
+	@DisplayName("프로필 사진이 없으면 본문에 null 로 나간다 — 필드를 빼지 않는다")
+	void keepsNullProfileImageField() throws Exception {
+		given(authService.loginWithKakao(any(KakaoLoginReq.class))).willReturn(loginResult(null));
+
+		mockMvc.perform(post("/api/v1/auth/kakao").contentType(MediaType.APPLICATION_JSON).content(REQUEST_JSON))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.user.profileImageUrl").isEmpty());
+	}
+
+	@Test
+	@DisplayName("인가 코드가 비어 있으면 서비스를 부르지 않고 400 이다")
+	void rejectsBlankAuthorizationCode() throws Exception {
+		String blank = """
+			{"authorizationCode":"","redirectUri":"http://localhost:5173/oauth/kakao"}""";
+
+		mockMvc.perform(post("/api/v1/auth/kakao").contentType(MediaType.APPLICATION_JSON).content(blank))
+			.andExpect(status().isBadRequest());
+	}
+
+	private LoginResult loginResult(String profileImageUrl) {
+		return new LoginResult(
+			new KakaoLoginRes("access-token", true, new AuthUserRes(1L, "홍길동", profileImageUrl)),
+			"refresh-token");
+	}
+}
