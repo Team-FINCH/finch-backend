@@ -3,6 +3,8 @@ package com.finch.domain.auth.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -12,12 +14,15 @@ import com.finch.domain.auth.dto.response.AuthUserRes;
 import com.finch.domain.auth.dto.response.KakaoLoginRes;
 import com.finch.domain.auth.service.AuthService;
 import com.finch.domain.auth.service.LoginResult;
+import com.finch.domain.auth.service.TokenPair;
+import com.finch.global.security.JwtProvider;
 import com.finch.global.config.SecurityConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import jakarta.servlet.http.Cookie;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -40,6 +45,9 @@ class AuthControllerTest {
 
 	@MockitoBean
 	private AuthService authService;
+
+	@MockitoBean
+	private JwtProvider jwtProvider;
 
 	@Test
 	@DisplayName("로그인 응답 본문은 accessToken · isNewUser · user 세 개다")
@@ -95,6 +103,58 @@ class AuthControllerTest {
 
 		mockMvc.perform(post("/api/v1/auth/kakao").contentType(MediaType.APPLICATION_JSON).content(blank))
 			.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	@DisplayName("재발급은 본문에 accessToken 만 주고 새 Refresh 는 쿠키로 내려간다")
+	void refreshReturnsAccessTokenAndRotatesCookie() throws Exception {
+		given(authService.refresh("old-refresh")).willReturn(new TokenPair("new-access", "new-refresh"));
+
+		MvcResult result = mockMvc.perform(post("/api/v1/auth/refresh").cookie(new Cookie("refreshToken", "old-refresh")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.accessToken").value("new-access"))
+			.andExpect(jsonPath("$.refreshToken").doesNotExist())
+			.andReturn();
+
+		assertThat(result.getResponse().getHeader(HttpHeaders.SET_COOKIE))
+			.contains("refreshToken=new-refresh")
+			.contains("Max-Age=1209600");
+	}
+
+	@Test
+	@DisplayName("쿠키가 없으면 AUTH_REFRESH_TOKEN_MISSING — 최초 방문자를 로그인 화면으로 튕기지 않으려는 구분이다")
+	void missingCookieIsItsOwnCode() throws Exception {
+		mockMvc.perform(post("/api/v1/auth/refresh"))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.code").value("AUTH_REFRESH_TOKEN_MISSING"));
+
+		// 쿠키 유무는 HTTP 의 일이라 서비스까지 내려가지 않는다.
+		verifyNoInteractions(authService);
+	}
+
+	@Test
+	@DisplayName("로그아웃은 204 이고 브라우저 쿠키도 즉시 만료시킨다")
+	void logoutClearsCookie() throws Exception {
+		given(jwtProvider.parseAccessToken("access-token")).willReturn(7L);
+
+		MvcResult result = mockMvc.perform(post("/api/v1/auth/logout").header(HttpHeaders.AUTHORIZATION, "Bearer access-token"))
+			.andExpect(status().isNoContent())
+			.andReturn();
+
+		verify(authService).logout(7L);
+		assertThat(result.getResponse().getHeader(HttpHeaders.SET_COOKIE))
+			.contains("refreshToken=")
+			.contains("Max-Age=0");
+	}
+
+	@Test
+	@DisplayName("Authorization 헤더가 없으면 로그아웃도 AUTH_INVALID_TOKEN — 누락을 만료로 주지 않는다")
+	void logoutWithoutBearerIsInvalidToken() throws Exception {
+		mockMvc.perform(post("/api/v1/auth/logout"))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.code").value("AUTH_INVALID_TOKEN"));
+
+		verifyNoInteractions(authService);
 	}
 
 	private LoginResult loginResult(String profileImageUrl) {
