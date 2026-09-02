@@ -6,7 +6,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Testcontainers 가 Docker 를 요구한다. 없으면 gradle 스택트레이스 전에 알려주고 끝낸다.
-if ! docker info >/dev/null 2>&1; then
+# CI 의 job 이미지(temurin)에는 docker CLI 가 없다 — Testcontainers 는 CLI 없이
+# 소켓과 직접 통신하므로 소켓 존재로 먼저 판정하고, CLI 는 로컬용 보조 판정이다.
+if [ ! -S /var/run/docker.sock ] && ! docker info >/dev/null 2>&1; then
   echo "✗ Docker 에 연결할 수 없습니다 — Testcontainers 테스트가 실패합니다" >&2
   echo "  로컬: Docker Desktop 을 켜세요" >&2
   echo "  CI:   runner 에 /var/run/docker.sock 마운트가 필요합니다 (infra 소관)" >&2
