@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.finch.domain.auth.exception.AuthErrorCode;
 import com.finch.global.exception.CustomException;
 import java.time.Duration;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatusCode;
@@ -14,7 +15,6 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
 
 /**
  * 카카오와 이야기하는 유일한 지점이다. 인가 코드를 사용자 정보로 바꿔 주고, 그 외는 아무것도 모른다.
@@ -25,6 +25,7 @@ import reactor.core.publisher.Mono;
  * 실패는 종류를 가리지 않고 {@code AUTH_KAKAO_FAILED} 하나로 모은다 (apiSpec 11장).
  * 코드가 만료됐는지 이미 썼는지 시크릿이 틀렸는지를 응답으로 알려주면 공격자에게 힌트가 된다.
  */
+@Slf4j
 @Component
 public class KakaoOAuthClient {
 
@@ -76,6 +77,7 @@ public class KakaoOAuthClient {
 			.body(BodyInserters.fromFormData(tokenForm(authorizationCode, redirectUri))), KakaoTokenRes.class);
 
 		if (token == null || token.accessToken() == null) {
+			log.warn("카카오 토큰 응답에 access_token 이 없다");
 			throw new CustomException(AuthErrorCode.AUTH_KAKAO_FAILED);
 		}
 		return token.accessToken();
@@ -106,6 +108,8 @@ public class KakaoOAuthClient {
 			.header("Authorization", "Bearer " + kakaoAccessToken), KakaoUserRes.class);
 
 		if (user == null || user.id() == null || user.nickname() == null) {
+			log.warn("카카오 사용자 정보가 부족하다 id={} nickname={}",
+				user == null ? null : user.id(), user == null ? null : user.nickname());
 			// 닉네임은 필수 동의 항목이다. 없다면 콘솔의 동의항목 설정이 우리 가정과 다른 것이므로
 			// 이름 없는 계정을 만들지 않고 실패로 끝낸다.
 			throw new CustomException(AuthErrorCode.AUTH_KAKAO_FAILED);
@@ -116,8 +120,14 @@ public class KakaoOAuthClient {
 	private <T> T call(WebClient.RequestHeadersSpec<?> spec, Class<T> type) {
 		try {
 			return spec.retrieve()
-				.onStatus(HttpStatusCode::isError,
-					response -> Mono.error(new CustomException(AuthErrorCode.AUTH_KAKAO_FAILED)))
+				.onStatus(HttpStatusCode::isError, response -> response.bodyToMono(String.class)
+					.defaultIfEmpty("")
+					.map(body -> {
+						// 사용자에게는 사유를 알리지 않지만 서버는 알아야 한다. 이 로그가 없으면
+						// 코드 만료·redirect_uri 불일치·동의항목 문제가 전부 같은 401 로만 보인다.
+						log.warn("카카오 호출 실패 status={} body={}", response.statusCode(), body);
+						return new CustomException(AuthErrorCode.AUTH_KAKAO_FAILED);
+					}))
 				.bodyToMono(type)
 				.block(TIMEOUT);
 		} catch (CustomException e) {
