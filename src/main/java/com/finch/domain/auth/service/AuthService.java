@@ -8,6 +8,7 @@ import com.finch.domain.auth.exception.AuthErrorCode;
 import com.finch.domain.auth.repository.UserRepository;
 import com.finch.global.exception.CustomException;
 import com.finch.global.security.JwtProvider;
+import com.finch.global.security.RefreshTokenStore;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -41,6 +42,8 @@ public class AuthService {
 
 	private final JwtProvider jwtProvider;
 
+	private final RefreshTokenStore refreshTokenStore;
+
 	public LoginResult loginWithKakao(KakaoLoginReq request) {
 		KakaoUser kakaoUser = kakaoOAuthClient.fetchUser(request.authorizationCode(), request.redirectUri());
 
@@ -54,8 +57,45 @@ public class AuthService {
 			resolved.created(),
 			AuthUserRes.from(user));
 
-		// TODO 백4: Refresh 를 Redis 에 저장해 회전·무효화가 가능하게 한다. 지금은 쿠키로만 내려간다.
-		return new LoginResult(body, jwtProvider.createRefreshToken(user.getId()));
+		return new LoginResult(body, issueRefreshToken(user.getId()));
+	}
+
+	/**
+	 * 쿠키의 Refresh Token 으로 Access Token 을 다시 발급한다 (apiSpec 2.2).
+	 * <p>
+	 * <b>Refresh 도 함께 새로 내려간다(회전).</b> 옛 토큰은 저장소에서 덮어써져 그 즉시 무효가 된다.
+	 * 그래서 유출된 토큰을 공격자가 먼저 쓰면 정상 사용자의 다음 재발급이 실패하고, 탈취가 드러난다.
+	 * <p>
+	 * 실패는 전부 {@code AUTH_INVALID_TOKEN} 이다 — 만료든 서명 불일치든 회전 충돌이든. 쿠키 자체가 없는
+	 * 경우만 {@code AUTH_REFRESH_TOKEN_MISSING} 이고 그 판정은 컨트롤러가 한다(쿠키 유무는 HTTP 의 일이다).
+	 */
+	public TokenPair refresh(String refreshToken) {
+		long userId = jwtProvider.parseRefreshToken(refreshToken);
+
+		if (!refreshTokenStore.matches(userId, refreshToken)) {
+			// 서명도 맞고 만료도 아닌데 저장된 것과 다르다 = 이미 회전에 쓰였거나 로그아웃된 토큰이다.
+			// 서명 검증만으로는 잡을 수 없어서 저장소가 필요하다.
+			throw new CustomException(AuthErrorCode.AUTH_INVALID_TOKEN);
+		}
+
+		return new TokenPair(jwtProvider.createAccessToken(userId), issueRefreshToken(userId));
+	}
+
+	/**
+	 * 로그아웃 (apiSpec 2.3). 저장된 Refresh 를 지워 재발급을 막는다.
+	 * <p>
+	 * Access Token 은 무상태라 서버가 회수할 수 없다. 남은 최대 30분은 그대로 유효하고,
+	 * 그 창을 좁히는 것이 Access 를 짧게 잡은 이유다. 로그아웃이 즉시 끊는 것은 <b>재발급 경로</b>다.
+	 */
+	public void logout(long userId) {
+		refreshTokenStore.delete(userId);
+	}
+
+	/** 발급과 저장은 항상 같이 일어난다. 저장을 빠뜨리면 그 토큰으로는 재발급이 안 된다. */
+	private String issueRefreshToken(long userId) {
+		String refreshToken = jwtProvider.createRefreshToken(userId);
+		refreshTokenStore.save(userId, refreshToken);
+		return refreshToken;
 	}
 
 	/** 카카오에서 닉네임·프로필이 바뀌었으면 반영한다. 같은 값이면 변경 감지가 UPDATE 를 만들지 않는다. */

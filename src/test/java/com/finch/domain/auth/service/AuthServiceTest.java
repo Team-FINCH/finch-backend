@@ -3,7 +3,10 @@ package com.finch.domain.auth.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.finch.domain.auth.dto.request.KakaoLoginReq;
@@ -12,6 +15,7 @@ import com.finch.domain.auth.exception.AuthErrorCode;
 import com.finch.domain.auth.repository.UserRepository;
 import com.finch.global.exception.CustomException;
 import com.finch.global.security.JwtProvider;
+import com.finch.global.security.RefreshTokenStore;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,13 +43,16 @@ class AuthServiceTest {
 	@Mock
 	private UserRepository userRepository;
 
+	@Mock
+	private RefreshTokenStore refreshTokenStore;
+
 	private final JwtProvider jwtProvider = new JwtProvider(SECRET);
 
 	private AuthService authService;
 
 	@BeforeEach
 	void setUp() {
-		authService = new AuthService(kakaoOAuthClient, userRepository, jwtProvider);
+		authService = new AuthService(kakaoOAuthClient, userRepository, jwtProvider, refreshTokenStore);
 	}
 
 	@Test
@@ -121,6 +128,65 @@ class AuthServiceTest {
 		LoginResult result = authService.loginWithKakao(REQUEST);
 
 		assertThat(result.body().user().profileImageUrl()).isEqualTo("https://img.kakao/1.jpg");
+	}
+
+	@Test
+	@DisplayName("저장된 Refresh 와 일치하면 Access 를 새로 주고 Refresh 도 회전한다")
+	void rotatesOnRefresh() {
+		String oldRefresh = jwtProvider.createRefreshToken(7L);
+		given(refreshTokenStore.matches(7L, oldRefresh)).willReturn(true);
+
+		TokenPair tokens = authService.refresh(oldRefresh);
+
+		assertThat(jwtProvider.parseAccessToken(tokens.accessToken())).isEqualTo(7L);
+		assertThat(tokens.refreshToken()).isNotEqualTo(oldRefresh);
+		// 새 Refresh 가 저장돼야 다음 재발급이 성립한다. 저장을 빠뜨리면 한 번만 되고 끊긴다.
+		verify(refreshTokenStore).save(7L, tokens.refreshToken());
+	}
+
+	@Test
+	@DisplayName("서명이 유효해도 저장된 것과 다르면 거부한다 — 회전 충돌")
+	void rejectsRotatedRefreshToken() {
+		String stale = jwtProvider.createRefreshToken(7L);
+		given(refreshTokenStore.matches(7L, stale)).willReturn(false);
+
+		assertThatThrownBy(() -> authService.refresh(stale))
+			.isInstanceOf(CustomException.class)
+			.extracting("errorCode")
+			.isEqualTo(AuthErrorCode.AUTH_INVALID_TOKEN);
+		verify(refreshTokenStore, never()).save(anyLong(), any());
+	}
+
+	@Test
+	@DisplayName("Access 토큰을 Refresh 자리에 넣으면 저장소를 보기도 전에 거부한다")
+	void rejectsAccessTokenOnRefresh() {
+		String access = jwtProvider.createAccessToken(7L);
+
+		assertThatThrownBy(() -> authService.refresh(access))
+			.isInstanceOf(CustomException.class)
+			.extracting("errorCode")
+			.isEqualTo(AuthErrorCode.AUTH_INVALID_TOKEN);
+		verifyNoInteractions(refreshTokenStore);
+	}
+
+	@Test
+	@DisplayName("로그아웃은 저장된 Refresh 를 지운다 — 쿠키만 지우면 서버는 계속 재발급해 준다")
+	void logoutDeletesStoredToken() {
+		authService.logout(7L);
+
+		verify(refreshTokenStore).delete(7L);
+	}
+
+	@Test
+	@DisplayName("로그인은 Refresh 를 발급과 동시에 저장한다")
+	void savesRefreshTokenOnLogin() {
+		given(kakaoOAuthClient.fetchUser(any(), any())).willReturn(KAKAO_USER);
+		given(userRepository.findByKakaoId(KAKAO_USER.kakaoId())).willReturn(Optional.empty());
+		given(userRepository.save(any(User.class))).willReturn(userWithId(1L, "홍길동"));
+
+		LoginResult result = authService.loginWithKakao(REQUEST);
+
+		verify(refreshTokenStore).save(1L, result.refreshToken());
 	}
 
 	/** 엔티티에 id 세터가 없다. DB 가 채우는 값이라 테스트에서만 리플렉션으로 넣는다. */

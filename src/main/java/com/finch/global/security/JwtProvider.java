@@ -54,6 +54,8 @@ public class JwtProvider {
 
 	static final String TYPE_REFRESH = "refresh";
 
+	private static final String BEARER_PREFIX = "Bearer ";
+
 	private final SecretKey key;
 
 	private final Duration accessTokenTtl;
@@ -75,6 +77,19 @@ public class JwtProvider {
 		this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
 		this.accessTokenTtl = accessTokenTtl;
 		this.refreshTokenTtl = refreshTokenTtl;
+	}
+
+	/**
+	 * {@code Authorization: Bearer <토큰>} 헤더에서 토큰만 떼어 낸다.
+	 * <p>
+	 * 헤더가 없거나 {@code Bearer } 형식이 아니면 {@code AUTH_INVALID_TOKEN} 이다 (apiSpec 1.2).
+	 * 누락을 만료로 주면 프론트가 재발급을 시도하고, 재발급이 성공하면 <b>원래 토큰을 안 붙인 버그가 가려진다.</b>
+	 */
+	public static String resolveBearerToken(String authorizationHeader) {
+		if (authorizationHeader == null || !authorizationHeader.startsWith(BEARER_PREFIX)) {
+			throw new CustomException(AuthErrorCode.AUTH_INVALID_TOKEN);
+		}
+		return authorizationHeader.substring(BEARER_PREFIX.length());
 	}
 
 	public String createAccessToken(long userId) {
