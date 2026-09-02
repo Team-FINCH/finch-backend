@@ -1,0 +1,36 @@
+# 백엔드 파트(backend/) CI. 루트 .gitlab-ci.yml 에서 아래처럼 포함해 사용한다.
+#
+#   include:
+#     - local: backend/.gitlab-ci.yml
+#
+# 루트는 소유권 경계상 백엔드 담당이 수정하지 않으므로(ADR-0002) 포함 설정은 인프라가 처리한다.
+#
+# Testcontainers(Postgres·Redis)가 runner 호스트의 Docker 를 쓴다.
+# runner(docker executor)의 config.toml 에 소켓 마운트가 필요하다 (infra 소관):
+#   volumes = ["/var/run/docker.sock:/var/run/docker.sock"]
+
+backend:test:
+  image: eclipse-temurin:21-jdk
+  # backend/ 변경에만 반응해 다른 파트 파이프라인에 영향을 주지 않는다.
+  rules:
+    - changes:
+        - backend/**/*
+  variables:
+    # 캐시가 프로젝트 디렉터리 밖이면 GitLab cache 로 보존되지 않는다.
+    GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle"
+  cache:
+    key:
+      files:
+        - backend/build.gradle
+    paths:
+      - .gradle/caches
+      - .gradle/wrapper
+  before_script:
+    - cd backend
+  # 검사 목록은 scripts/check.sh 한 곳에만 둔다. 로컬과 CI 가 갈라지지 않게.
+  script:
+    - ./scripts/check.sh
+  artifacts:
+    when: always
+    reports:
+      junit: backend/build/test-results/test/TEST-*.xml
