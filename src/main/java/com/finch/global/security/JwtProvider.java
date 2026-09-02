@@ -8,6 +8,9 @@ import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -23,9 +26,10 @@ import javax.crypto.SecretKey;
  * Refresh 만료는 {@code AUTH_INVALID_TOKEN} — 재발급 응답에 EXPIRED 를 주면 인터셉터가 다시 재발급을
  * 시도해 무한 루프가 된다. 그래서 만료 판정 자체는 같아도 나가는 코드가 다르다.
  * <p>
- * 빈으로 등록하지 않는다. {@code jwt.secret} 환경변수와 빈 등록은 이 클래스의 첫 사용자인
- * 카카오 로그인 API 에서 함께 넣는다 — 지금 넣으면 값이 없는 사람의 앱 기동이 깨진다.
+ * 서명 키는 {@code jwt.secret} 으로 주입받는다. 기본값이 없으므로 {@code JWT_SECRET} 이 비어 있으면
+ * 앱이 기동하지 못하고 그 변수 이름을 알려주며 죽는다 — application.yaml 의 비밀값 규칙과 같다.
  */
+@Component
 public class JwtProvider {
 
 	/**
@@ -61,7 +65,8 @@ public class JwtProvider {
 	 *               짧으면 jjwt 가 {@code WeakKeyException} 으로 생성을 거부한다.
 	 *               짧은 키는 무차별 대입으로 위조가 가능해 서명이 있어도 없는 것과 같다.
 	 */
-	public JwtProvider(String secret) {
+	@Autowired
+	public JwtProvider(@Value("${jwt.secret}") String secret) {
 		this(secret, ACCESS_TOKEN_TTL, REFRESH_TOKEN_TTL);
 	}
 
