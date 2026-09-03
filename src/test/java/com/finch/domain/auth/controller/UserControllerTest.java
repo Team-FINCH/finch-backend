@@ -52,7 +52,7 @@ class UserControllerTest {
 	private JwtProvider jwtProvider;
 
 	@Test
-	@DisplayName("내 정보 응답은 userId · nickname · profileImageUrl · currentRoundId · joinedAt 다섯 개다")
+	@DisplayName("내 정보 응답은 userId · nickname · profileImageUrl · joinedAt 네 개다")
 	void returnsContractedBody() throws Exception {
 		givenLoggedIn(42L);
 		given(userService.getMe(42L)).willReturn(userMeRes(42L));
@@ -66,15 +66,20 @@ class UserControllerTest {
 			.andExpect(jsonPath("$.joinedAt").value("2026-08-25T10:00:00+09:00"));
 	}
 
+	/**
+	 * 투자 회차가 없어지면서 `currentRoundId` 도 빠졌다 (GitLab 이슈 #27). 계좌는 사용자당 하나라
+	 * 클라이언트가 식별자로 지목할 대상이 아니다 — 계좌 도메인이 붙을 때 `accountId` 로 되살리지 않는다.
+	 */
 	@Test
-	@DisplayName("currentRoundId 는 회차 도메인이 없어 null 이다 — 필드를 빼거나 가짜 숫자를 넣지 않는다")
-	void keepsCurrentRoundIdAsNull() throws Exception {
+	@DisplayName("응답에 계좌·회차 식별자를 넣지 않는다")
+	void omitsAccountIdentifier() throws Exception {
 		givenLoggedIn(42L);
 		given(userService.getMe(42L)).willReturn(userMeRes(42L));
 
 		mockMvc.perform(get("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(VALID_TOKEN)))
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.currentRoundId").isEmpty());
+			.andExpect(jsonPath("$.currentRoundId").doesNotExist())
+			.andExpect(jsonPath("$.accountId").doesNotExist());
 	}
 
 	@Test
@@ -158,7 +163,7 @@ class UserControllerTest {
 	}
 
 	private static UserMeRes userMeRes(long userId) {
-		return new UserMeRes(userId, "홍길동", "https://img.kakao/1.jpg", null,
+		return new UserMeRes(userId, "홍길동", "https://img.kakao/1.jpg",
 			OffsetDateTime.of(2026, 8, 25, 10, 0, 0, 0, ZoneOffset.ofHours(9)));
 	}
 }

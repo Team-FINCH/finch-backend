@@ -14,7 +14,6 @@ public enum GeneralErrorCode implements BaseErrorCode {
 	IDEMPOTENCY_KEY_REQUIRED(HttpStatus.BAD_REQUEST, "요청 식별자가 필요합니다"),
 	IDEMPOTENCY_IN_PROGRESS(HttpStatus.CONFLICT, "같은 요청을 처리하고 있습니다. 잠시 후 다시 시도해 주세요"),
 	IDEMPOTENCY_CONFLICT(HttpStatus.CONFLICT, "같은 키로 다른 요청이 접수됐습니다"),
-	ROUND_READ_ONLY(HttpStatus.CONFLICT, "종료된 회차에는 변경할 수 없습니다"),
 	METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "허용되지 않은 요청 방식입니다"),
 	UNSUPPORTED_MEDIA_TYPE(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "지원하지 않는 요청 형식입니다"),
 	INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요");

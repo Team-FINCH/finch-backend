@@ -55,7 +55,6 @@ class ErrorCodeContractTest {
 		Map.entry("IDEMPOTENCY_KEY_REQUIRED", HttpStatus.BAD_REQUEST),
 		Map.entry("IDEMPOTENCY_IN_PROGRESS", HttpStatus.CONFLICT),
 		Map.entry("IDEMPOTENCY_CONFLICT", HttpStatus.CONFLICT),
-		Map.entry("ROUND_READ_ONLY", HttpStatus.CONFLICT),
 		Map.entry("METHOD_NOT_ALLOWED", HttpStatus.METHOD_NOT_ALLOWED),
 		Map.entry("UNSUPPORTED_MEDIA_TYPE", HttpStatus.UNSUPPORTED_MEDIA_TYPE),
 		Map.entry("INTERNAL_ERROR", HttpStatus.INTERNAL_SERVER_ERROR),

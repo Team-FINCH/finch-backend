@@ -7,16 +7,14 @@ import java.time.ZoneId;
 /**
  * `GET /api/v1/users/me` 응답 본문 (apiSpec 2.4).
  * <p>
- * <b>`currentRoundId` 는 항상 null 이다 — 아직.</b> erd.md 3.1 은 최초 로그인 트랜잭션에서
- * `investment_round` 를 만들라고 하지만 그 테이블의 소유 도메인이 아직 없어 회차를 만드는 코드가
- * 없다 ({@code AuthService} 주석 참고). 조회할 행이 없으므로 0 이나 1 같은 값을 채우지 않는다 —
- * 프론트가 그것을 실제 회차 ID 로 믿고 조회에 쓴다. 소유 도메인이 생기면 이 자리에서 그 서비스에 묻는다.
+ * <b>계좌 식별자를 내려보내지 않는다.</b> 투자 회차가 없어지면서 `currentRoundId` 도 함께 빠졌고
+ * (GitLab 이슈 #27), 계좌는 사용자당 하나라 클라이언트가 식별자로 지목할 대상이 아니다.
+ * 모든 계좌 관련 요청은 토큰의 사용자로 계좌를 찾는다 (apiSpec 1.6).
  */
 public record UserMeRes(
 	Long userId,
 	String nickname,
 	String profileImageUrl,
-	Long currentRoundId,
 	OffsetDateTime joinedAt) {
 
 	/**
@@ -35,7 +33,6 @@ public record UserMeRes(
 			user.getId(),
 			user.getNickname(),
 			user.getProfileImageUrl(),
-			null,
 			user.getCreatedAt().atZone(KST).toOffsetDateTime());
 	}
 }

@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.finch.domain.deposit.exception.DepositErrorCode;
 import com.finch.global.apiPayload.code.GeneralErrorCode;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
@@ -46,8 +47,8 @@ class GlobalExceptionHandlerTest {
 	void customException() throws Exception {
 		mockMvc.perform(get("/stub/custom"))
 			.andExpect(status().isConflict())
-			.andExpect(jsonPath("$.code").value("ROUND_READ_ONLY"))
-			.andExpect(jsonPath("$.detail.roundId").value(3))
+			.andExpect(jsonPath("$.code").value("DEPOSIT_LIMIT_EXCEEDED"))
+			.andExpect(jsonPath("$.detail.remainingAmount").value(3000000))
 			.andExpect(jsonPath("$.requestId").doesNotExist());
 	}
 
@@ -160,7 +161,7 @@ class GlobalExceptionHandlerTest {
 
 		@GetMapping("/custom")
 		void custom() {
-			throw new CustomException(GeneralErrorCode.ROUND_READ_ONLY, Map.of("roundId", 3));
+			throw new CustomException(DepositErrorCode.DEPOSIT_LIMIT_EXCEEDED, Map.of("remainingAmount", 3000000));
 		}
 
 		@GetMapping("/relay")

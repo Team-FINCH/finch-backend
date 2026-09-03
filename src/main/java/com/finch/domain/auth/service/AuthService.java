@@ -27,8 +27,8 @@ import org.springframework.stereotype.Service;
  * 리포지토리 호출은 각각이 자기 트랜잭션이다(Spring Data 기본). 그래서 프로필 갱신은
  * 영속 상태에 의존하지 않고 {@code save} 로 명시한다.
  * <p>
- * ⚠️ <b>최초 로그인의 계좌·회차·예수금 생성은 아직 없다.</b> erd.md 3.1 은 `users` INSERT 와 함께
- * `investment_round`·`ledger_entry` 를 한 트랜잭션에서 만들라고 하지만 그 테이블의 소유 도메인
+ * ⚠️ <b>최초 로그인의 계좌·예수금 생성은 아직 없다.</b> erd.md 3.1 은 `users` INSERT 와 함께
+ * `account`·`ledger_entry` 를 한 트랜잭션에서 만들라고 하지만 그 테이블의 소유 도메인
  * (`account`·`ledger`)이 아직 없다. 소유 도메인이 생기면 이 자리에서 그 서비스를 부르고,
  * 그때는 세 INSERT 를 한 트랜잭션으로 묶어야 한다.
  */

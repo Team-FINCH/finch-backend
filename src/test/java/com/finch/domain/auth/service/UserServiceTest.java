@@ -60,18 +60,6 @@ class UserServiceTest {
 	}
 
 	/**
-	 * 회차를 만드는 코드가 아직 없다 (erd.md 3.1, `AuthService` 주석). 조회할 행이 없는데 0·1 같은 값을
-	 * 채우면 프론트가 그것을 실제 회차 ID 로 믿고 조회에 쓴다. 소유 도메인이 생기면 이 테스트가 바뀐다.
-	 */
-	@Test
-	@DisplayName("currentRoundId 는 아직 null 이다")
-	void leavesCurrentRoundIdEmpty() {
-		given(userRepository.findById(42L)).willReturn(Optional.of(user()));
-
-		assertThat(userService.getMe(42L).currentRoundId()).isNull();
-	}
-
-	/**
 	 * 서명은 유효한데 가리키는 계정이 없는 상태다(탈퇴·DB 초기화). 404 를 주면 프론트가 "경로가 없다" 로
 	 * 읽어 재시도하지만, 필요한 동작은 세션을 버리고 다시 로그인하는 것이다 (apiSpec 1.2).
 	 */
