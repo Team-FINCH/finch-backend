@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.finch.domain.account.service.AccountService;
 import com.finch.domain.auth.dto.request.KakaoLoginReq;
 import com.finch.domain.auth.entity.User;
 import com.finch.domain.auth.exception.AuthErrorCode;
@@ -46,13 +47,22 @@ class AuthServiceTest {
 	@Mock
 	private RefreshTokenStore refreshTokenStore;
 
+	/** 가입 트랜잭션은 이 빈이 연다. 여기서는 "불렸는지"만 보고 실제 INSERT 는 통합 테스트가 본다. */
+	@Mock
+	private UserRegistrationService userRegistrationService;
+
+	/** 계좌 없는 기존 사용자 보정. 신규 가입 경로에서는 불리지 않아야 한다. */
+	@Mock
+	private AccountService accountService;
+
 	private final JwtProvider jwtProvider = new JwtProvider(SECRET);
 
 	private AuthService authService;
 
 	@BeforeEach
 	void setUp() {
-		authService = new AuthService(kakaoOAuthClient, userRepository, jwtProvider, refreshTokenStore);
+		authService = new AuthService(kakaoOAuthClient, userRepository, userRegistrationService, accountService,
+			jwtProvider, refreshTokenStore);
 	}
 
 	@Test
@@ -60,7 +70,7 @@ class AuthServiceTest {
 	void registersOnFirstLogin() {
 		given(kakaoOAuthClient.fetchUser(any(), any())).willReturn(KAKAO_USER);
 		given(userRepository.findByKakaoId(KAKAO_USER.kakaoId())).willReturn(Optional.empty());
-		given(userRepository.save(any(User.class))).willReturn(userWithId(1L, "홍길동"));
+		given(userRegistrationService.register(KAKAO_USER)).willReturn(userWithId(1L, "홍길동"));
 
 		LoginResult result = authService.loginWithKakao(REQUEST);
 
@@ -69,6 +79,40 @@ class AuthServiceTest {
 		// 토큰이 진짜 그 사용자를 가리키는지까지 본다. 발급만 되고 다른 id 가 박히면 조용히 남의 계정이 된다.
 		assertThat(jwtProvider.parseAccessToken(result.body().accessToken())).isEqualTo(1L);
 		assertThat(jwtProvider.parseRefreshToken(result.refreshToken())).isEqualTo(1L);
+	}
+
+	/**
+	 * 신규 가입은 {@code UserRegistrationService} 안에서 계좌까지 만든다. 여기서 보정까지 부르면
+	 * 계좌를 만들었는지 한 번 더 조회하는 낭비이고, 더 나쁘게는 <b>가입 트랜잭션 밖에서</b> 계좌를
+	 * 건드리는 경로가 생긴다.
+	 */
+	@Test
+	@DisplayName("신규 가입은 계좌 보정을 타지 않는다 — 가입 트랜잭션이 이미 계좌를 만들었다")
+	void doesNotEnsureAccountForNewUser() {
+		given(kakaoOAuthClient.fetchUser(any(), any())).willReturn(KAKAO_USER);
+		given(userRepository.findByKakaoId(KAKAO_USER.kakaoId())).willReturn(Optional.empty());
+		given(userRegistrationService.register(KAKAO_USER)).willReturn(userWithId(1L, "홍길동"));
+
+		authService.loginWithKakao(REQUEST);
+
+		verifyNoInteractions(accountService);
+	}
+
+	/**
+	 * 계좌 도메인이 생기기 전에 가입한 사용자는 계좌가 없다. 그들에게 {@code GET /account} 는 실패하고
+	 * 주문·충전도 되지 않으므로 로그인할 때 보정한다.
+	 */
+	@Test
+	@DisplayName("기존 사용자 로그인은 계좌를 보정한다 — 계좌 도메인 이전에 가입한 사용자를 위해")
+	void ensuresAccountForReturningUser() {
+		User existing = userWithId(7L, "예전이름");
+		given(kakaoOAuthClient.fetchUser(any(), any())).willReturn(KAKAO_USER);
+		given(userRepository.findByKakaoId(KAKAO_USER.kakaoId())).willReturn(Optional.of(existing));
+		given(userRepository.save(existing)).willReturn(existing);
+
+		authService.loginWithKakao(REQUEST);
+
+		verify(accountService).ensureAccount(7L);
 	}
 
 	@Test
@@ -91,16 +135,19 @@ class AuthServiceTest {
 	void losesRegistrationRaceButStillLogsIn() {
 		User createdByOther = userWithId(9L, "홍길동");
 		given(kakaoOAuthClient.fetchUser(any(), any())).willReturn(KAKAO_USER);
-		// 처음엔 없다고 보고, 저장에서 제약에 막히고, 다시 조회하면 남이 만든 행이 있다.
+		// 처음엔 없다고 보고, 가입 트랜잭션이 제약에 막히고, 다시 조회하면 남이 만든 행이 있다.
 		given(userRepository.findByKakaoId(KAKAO_USER.kakaoId()))
 			.willReturn(Optional.empty(), Optional.of(createdByOther));
-		given(userRepository.save(any(User.class))).willThrow(new DataIntegrityViolationException("uq_users_kakao_id"));
+		given(userRegistrationService.register(KAKAO_USER))
+			.willThrow(new DataIntegrityViolationException("uq_users_kakao_id"));
 
 		LoginResult result = authService.loginWithKakao(REQUEST);
 
 		assertThat(result.body().user().userId()).isEqualTo(9L);
-		// 이 요청이 만든 계정이 아니다. true 로 주면 나중에 최초 로그인 지급을 붙였을 때 두 번 지급된다.
+		// 이 요청이 만든 계정이 아니다. 진 쪽의 트랜잭션은 users·account 가 함께 롤백됐고,
+		// 이긴 쪽이 이미 계좌를 만들어 뒀다. 아래 보정은 그것을 확인만 하고 지나간다.
 		assertThat(result.body().isNewUser()).isFalse();
+		verify(accountService).ensureAccount(9L);
 	}
 
 	@Test
@@ -182,7 +229,7 @@ class AuthServiceTest {
 	void savesRefreshTokenOnLogin() {
 		given(kakaoOAuthClient.fetchUser(any(), any())).willReturn(KAKAO_USER);
 		given(userRepository.findByKakaoId(KAKAO_USER.kakaoId())).willReturn(Optional.empty());
-		given(userRepository.save(any(User.class))).willReturn(userWithId(1L, "홍길동"));
+		given(userRegistrationService.register(KAKAO_USER)).willReturn(userWithId(1L, "홍길동"));
 
 		LoginResult result = authService.loginWithKakao(REQUEST);
 
