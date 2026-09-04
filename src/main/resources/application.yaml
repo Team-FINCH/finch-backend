@@ -77,6 +77,28 @@ management:
         # Prometheus 는 에러 없이 빈 스크레이프만 계속한다 (infraSpec §6.1)
         enabled: true
 
+# 우리가 정한 값은 전부 finch.* 아래 둔다 (FinchProperties 주석).
+finch:
+  market:
+    # 평일 09:00~15:30(KST) 밖에서도 장이 열린 것으로 본다. 시연·테스트 전용이라 운영은 false 다.
+    # 발표(9/28)는 장 마감 뒤일 수 있고, 그때 주문이 전부 ORDER_MARKET_CLOSED 로 막히면 데모가 성립하지 않는다.
+    always-open: false
+
+  http:
+    # 외부 API(카카오·KIS·AI) 연결까지의 제한. 응답 대기 시간은 호출하는 쪽이 각자 정한다 (FinchProperties.Http).
+    connect-timeout: 3s
+
+  idempotency:
+    # Idempotency-Key 를 요구할 경로. 여기 없는 경로는 필터를 타지 않는다 (apiSpec 1.4).
+    # 충전 confirm 은 이 필터가 아니라 PG 가 발급한 paymentKey 로 멱등을 보장하므로 넣지 않는다.
+    paths:
+      - /api/v1/orders
+    # 처리 중 표시의 수명. 짧으면 처리가 끝나기 전에 풀려 같은 요청이 두 번 실행되고,
+    # 길면 서버가 죽었을 때 재시도가 그만큼 막힌다.
+    in-progress-ttl: 60s
+    # 최초 응답을 재생해 주는 기간. 24시간은 apiSpec 1.4 가 확정한 값이다.
+    done-ttl: 24h
+
 logging:
   pattern:
     # %X{requestId} 는 RequestIdFilter 가 MDC 에 둔 요청 식별자다 (apiSpec 1.1 요청 추적).
