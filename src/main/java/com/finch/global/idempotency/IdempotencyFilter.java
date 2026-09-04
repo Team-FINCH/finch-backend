@@ -22,6 +22,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.server.PathContainer;
@@ -63,12 +64,14 @@ public class IdempotencyFilter extends OncePerRequestFilter {
 	private final IdempotencyStore store;
 	private final ObjectMapper objectMapper;
 	private final List<PathPattern> paths;
+	private final long retryAfterSeconds;
 
 	public IdempotencyFilter(IdempotencyStore store, ObjectMapper objectMapper, IdempotencyProperties properties) {
 		this.store = store;
 		this.objectMapper = objectMapper;
 		PathPatternParser parser = PathPatternParser.defaultInstance;
 		this.paths = properties.paths().stream().map(parser::parse).toList();
+		this.retryAfterSeconds = properties.retryAfterSeconds();
 	}
 
 	/**
@@ -154,6 +157,9 @@ public class IdempotencyFilter extends OncePerRequestFilter {
 	private void respondToDuplicate(HttpServletResponse response, Snapshot snapshot, String bodyHash)
 		throws IOException {
 		if (snapshot.state() == State.IN_PROGRESS) {
+			// 계약이 "짧게 대기 후 동일 키로 재시도"(apiSpec 1.4)다. 그 간격을 클라이언트가 추측하면
+			// 파트마다 다른 값을 고르고, 너무 짧으면 앞선 처리가 끝나기 전에 409 만 되풀이한다.
+			response.setHeader(HttpHeaders.RETRY_AFTER, String.valueOf(retryAfterSeconds));
 			write(response, GeneralErrorCode.IDEMPOTENCY_IN_PROGRESS);
 			return;
 		}

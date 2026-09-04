@@ -2,6 +2,7 @@ package com.finch.global.idempotency;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -148,6 +149,32 @@ class IdempotencyFilterTest {
 			.andExpect(jsonPath("$.code").value("IDEMPOTENCY_IN_PROGRESS"));
 
 		assertThat(endpoints.calls).hasValue(0);
+	}
+
+	/**
+	 * 계약이 "짧게 대기 후 동일 키로 재시도"(apiSpec 1.4)인데 그 "짧게"를 클라이언트가 정하고 있었다.
+	 * 프론트 리뷰 요청으로 서버가 값을 내려주기로 했다 (apiSpec v0.7.1).
+	 */
+	@Test
+	@DisplayName("409 IDEMPOTENCY_IN_PROGRESS 에는 Retry-After 가 실린다 — 재시도 간격을 서버가 정한다")
+	void inProgressCarriesRetryAfter() throws Exception {
+		markInProgress("key-1", sha256Of(BODY));
+
+		mockMvc.perform(request("key-1", BODY))
+			.andExpect(status().isConflict())
+			.andExpect(header().string(HttpHeaders.RETRY_AFTER, "1"));
+	}
+
+	/** 재시도해도 소용없는 갈래에는 붙이지 않는다. 붙이면 클라이언트가 재시도해도 된다고 읽는다. */
+	@Test
+	@DisplayName("IDEMPOTENCY_CONFLICT 에는 Retry-After 를 붙이지 않는다 — 재시도 금지 신호다")
+	void conflictHasNoRetryAfter() throws Exception {
+		mockMvc.perform(request("key-1", BODY)).andExpect(status().isCreated());
+
+		mockMvc.perform(request("key-1", "{\"amount\":9999}"))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("IDEMPOTENCY_CONFLICT"))
+			.andExpect(header().doesNotExist(HttpHeaders.RETRY_AFTER));
 	}
 
 	/**
