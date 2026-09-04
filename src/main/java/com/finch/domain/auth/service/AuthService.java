@@ -1,5 +1,6 @@
 package com.finch.domain.auth.service;
 
+import com.finch.domain.account.service.AccountService;
 import com.finch.domain.auth.dto.request.KakaoLoginReq;
 import com.finch.domain.auth.dto.response.AuthUserRes;
 import com.finch.domain.auth.dto.response.KakaoLoginRes;
@@ -27,10 +28,8 @@ import org.springframework.stereotype.Service;
  * 리포지토리 호출은 각각이 자기 트랜잭션이다(Spring Data 기본). 그래서 프로필 갱신은
  * 영속 상태에 의존하지 않고 {@code save} 로 명시한다.
  * <p>
- * ⚠️ <b>최초 로그인의 계좌·예수금 생성은 아직 없다.</b> erd.md 3.1 은 `users` INSERT 와 함께
- * `account`·`ledger_entry` 를 한 트랜잭션에서 만들라고 하지만 그 테이블의 소유 도메인
- * (`account`·`ledger`)이 아직 없다. 소유 도메인이 생기면 이 자리에서 그 서비스를 부르고,
- * 그때는 세 INSERT 를 한 트랜잭션으로 묶어야 한다.
+ * <b>계좌·예수금 생성은 {@link UserRegistrationService} 가 한 트랜잭션으로 처리한다</b> (erd.md 3.1).
+ * 이 클래스가 트랜잭션을 열지 않는 위 두 이유가 그대로라서, 트랜잭션이 필요한 부분만 그 빈으로 뺐다.
  */
 @Service
 @RequiredArgsConstructor
@@ -39,6 +38,10 @@ public class AuthService {
 	private final KakaoOAuthClient kakaoOAuthClient;
 
 	private final UserRepository userRepository;
+
+	private final UserRegistrationService userRegistrationService;
+
+	private final AccountService accountService;
 
 	private final JwtProvider jwtProvider;
 
@@ -52,6 +55,14 @@ public class AuthService {
 			.orElseGet(() -> register(kakaoUser));
 
 		User user = resolved.user();
+
+		// 계좌 도메인이 생기기 전에 가입한 사용자는 계좌가 없다. 그들에게 GET /account 는 404 이고
+		// 주문도 충전도 되지 않으므로 로그인할 때 보정한다. 이미 있으면 아무 일도 하지 않는다.
+		// 신규 가입은 register() 안에서 이미 만들어졌으므로 여기서 두 번 만들지 않는다.
+		if (!resolved.created()) {
+			accountService.ensureAccount(user.getId());
+		}
+
 		KakaoLoginRes body = new KakaoLoginRes(
 			jwtProvider.createAccessToken(user.getId()),
 			resolved.created(),
@@ -104,15 +115,24 @@ public class AuthService {
 		return userRepository.save(user);
 	}
 
+	/**
+	 * 가입. 실제 INSERT 세 개는 {@link UserRegistrationService} 가 한 트랜잭션으로 처리하고,
+	 * 여기서는 <b>동시 가입 경합만</b> 다룬다.
+	 * <p>
+	 * 경합 처리가 이 자리에 남아 있어야 하는 이유는 그대로다 — 제약 위반으로 롤백된 트랜잭션은
+	 * 이미 rollback-only 라, 재조회가 <b>트랜잭션 밖</b>에서 새 트랜잭션으로 나가야 한다.
+	 */
 	private Resolved register(KakaoUser kakaoUser) {
 		try {
-			return new Resolved(userRepository.save(
-				User.register(kakaoUser.kakaoId(), kakaoUser.nickname(), kakaoUser.profileImageUrl())), true);
+			return new Resolved(userRegistrationService.register(kakaoUser), true);
 		} catch (DataIntegrityViolationException e) {
 			// 로그인 버튼을 빠르게 두 번 눌러 두 요청이 모두 "없음" 을 본 경우다.
 			// `uq_users_kakao_id` 가 둘째를 막았으므로 계정이 2개 생기지는 않는다. 다시 조회해 이어간다.
-			// created 는 false 다 — 이 요청이 만든 것이 아니다. 여기서 true 를 주면 나중에
-			// 최초 로그인 지급(erd.md 3.1)을 붙였을 때 한 계정에 두 번 지급될 수 있다.
+			// 진 쪽은 users·account·ledger_entry 세 INSERT 가 함께 롤백됐다.
+			//
+			// created 는 false 다 — 이 요청이 만든 것이 아니다. 그래서 이 요청은 아래 ensureAccount 를
+			// 타지만, 이긴 쪽이 이미 커밋해 계좌가 있으므로 아무 일도 하지 않는다.
+			// 초기 지급은 정확히 한 번이다 (불변식 4: 사용자별 account 는 1개).
 			return new Resolved(userRepository.findByKakaoId(kakaoUser.kakaoId())
 				.orElseThrow(() -> new CustomException(AuthErrorCode.AUTH_KAKAO_FAILED)), false);
 		}

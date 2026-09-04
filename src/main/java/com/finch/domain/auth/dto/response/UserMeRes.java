@@ -1,8 +1,8 @@
 package com.finch.domain.auth.dto.response;
 
 import com.finch.domain.auth.entity.User;
+import com.finch.global.util.KstTime;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
 
 /**
  * `GET /api/v1/users/me` 응답 본문 (apiSpec 2.4).
@@ -18,21 +18,17 @@ public record UserMeRes(
 	OffsetDateTime joinedAt) {
 
 	/**
-	 * apiSpec 1.1 은 모든 시각을 <b>KST 오프셋 포함</b> ISO 8601 로 정했다 (`2026-08-25T10:00:00+09:00`).
+	 * 시각 표기는 {@link KstTime} 하나가 정한다 (apiSpec 1.1 — KST 오프셋 포함 ISO 8601).
 	 * <p>
-	 * {@code Instant} 를 그대로 내보내면 Jackson 이 `2026-08-25T01:00:00Z` 로 쓴다. ISO 8601 이긴 하지만
-	 * 오프셋이 Z 라 계약과 다르고, 프론트가 날짜를 문자열 그대로 보여주는 자리에서 하루가 밀린다.
-	 * <p>
-	 * 시각을 내려보내는 첫 엔드포인트라 여기서 변환한다. 두 번째가 생기면 이 상수는
-	 * {@code global/} 의 공용 상수로 올려야 한다 — 도메인마다 각자 적으면 갈라진다.
+	 * 이 클래스가 시각을 내려보내는 첫 엔드포인트라 원래는 여기에 {@code ZoneId} 상수를 두고
+	 * "두 번째가 생기면 global 로 올린다"고 적어 두었다. {@code GET /account} 의 {@code asOf} 가
+	 * 두 번째다 — 그래서 옮겼다.
 	 */
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
-
 	public static UserMeRes from(User user) {
 		return new UserMeRes(
 			user.getId(),
 			user.getNickname(),
 			user.getProfileImageUrl(),
-			user.getCreatedAt().atZone(KST).toOffsetDateTime());
+			KstTime.toResponse(user.getCreatedAt()));
 	}
 }
