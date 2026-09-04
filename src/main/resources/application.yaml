@@ -89,15 +89,24 @@ finch:
     connect-timeout: 3s
 
   idempotency:
-    # Idempotency-Key 를 요구할 경로. 여기 없는 경로는 필터를 타지 않는다 (apiSpec 1.4).
-    # 충전 confirm 은 이 필터가 아니라 PG 가 발급한 paymentKey 로 멱등을 보장하므로 넣지 않는다.
+    # Idempotency-Key 를 요구할 경로. 여기 없는 경로는 필터를 타지 않는다.
+    # apiSpec 1.4·4.2·7.1·11.1·12 가 이 둘을 멱등성 필수로 적고 있고, 이 목록이 그 계약의 구현이다.
+    # 둘 중 하나를 빼면 그 엔드포인트는 조용히 멱등성 없이 열린다 — IdempotencyPropertiesTest 가 막는다.
+    #
+    # 충전을 ready/confirm 2단계로 바꾸고 멱등 기준을 PG 가 발급한 키로 옮기는 논의가 있지만,
+    # apiSpec 이 바뀌기 전까지는 위 명세가 계약이다. 명세가 개정되면 이 목록도 같은 MR 에서 바꾼다.
     paths:
+      - /api/v1/deposits
       - /api/v1/orders
     # 처리 중 표시의 수명. 짧으면 처리가 끝나기 전에 풀려 같은 요청이 두 번 실행되고,
     # 길면 서버가 죽었을 때 재시도가 그만큼 막힌다.
     in-progress-ttl: 60s
     # 최초 응답을 재생해 주는 기간. 24시간은 apiSpec 1.4 가 확정한 값이다.
     done-ttl: 24h
+    # 409 IDEMPOTENCY_IN_PROGRESS 응답의 Retry-After 헤더 값 (apiSpec 1.4).
+    # 계약이 "짧게 대기 후 동일 키로 재시도"인데, 그 "짧게"를 클라이언트가 추측하지 않게 서버가 정한다.
+    # 주문 트랜잭션은 1초 안에 끝나는 것이 정상이라 1초로 둔다. 초 단위 정수로만 나갈 수 있다(RFC 9110).
+    retry-after: 1s
 
 logging:
   pattern:
