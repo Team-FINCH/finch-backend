@@ -43,15 +43,23 @@ public class AccountService {
 	 * 뒤집을 수 없다. 초기 지급은 {@code INITIAL_GRANT} 이고 기록 주체가 account 인 것은
 	 * backConvention 2.5 가 정한 것이다.
 	 * <p>
-	 * 지급액은 {@code cashDelta} 와 {@code cashBalanceAfter} 가 같다 — 계좌의 첫 사건이라 이전 잔고가 0 이다.
-	 * 그래서 불변식 1({@code cash_balance} = {@code SUM(cash_delta)})이 개설 직후부터 성립한다.
+	 * <b>지급액이 0 이면 원장에 아무것도 남기지 않는다.</b> 기본 정책이 "지급 없음"이라 보통은 이쪽이다
+	 * (featureSpec 2.2). {@code cash_delta = 0} 인 행을 남기지 않는 이유는 회차 전환 기록
+	 * ({@code ROUND_OPEN}·{@code ROUND_CLOSE})을 없앤 이유와 같다 — <b>기록할 사건 자체가 없다</b>
+	 * (erd.md §2.3). 잔고가 0 인 계좌는 원장도 비어 있고, 그래도 불변식 1
+	 * ({@code cash_balance} = {@code SUM(cash_delta)})은 0 = 0 으로 성립한다.
+	 * <p>
+	 * 지급액이 있으면 {@code cashDelta} 와 {@code cashBalanceAfter} 가 같다 — 계좌의 첫 사건이라
+	 * 이전 잔고가 0 이기 때문이다.
 	 */
 	@Transactional(propagation = Propagation.MANDATORY)
 	public void openAccount(Long userId) {
 		long initialCash = properties.initialCash();
 		Account account = accountRepository.save(Account.open(userId, initialCash));
 
-		ledgerService.record(account.getId(), LedgerType.INITIAL_GRANT, initialCash, initialCash, Instant.now());
+		if (initialCash > 0) {
+			ledgerService.record(account.getId(), LedgerType.INITIAL_GRANT, initialCash, initialCash, Instant.now());
+		}
 	}
 
 	/**
