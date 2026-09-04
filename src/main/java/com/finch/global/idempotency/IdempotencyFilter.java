@@ -45,13 +45,16 @@ import tools.jackson.databind.ObjectMapper;
  * 본문을 읽을 수도, 바꿔 쓸 수도 없다. 응답을 {@link ContentCachingResponseWrapper} 로 감싸는 것은
  * 체인 바깥에 있는 필터만 할 수 있다. 요청 본문 해시도 마찬가지로 컨트롤러가 읽기 전에 떠야 한다.
  * <p>
- * <b>필터 자리는 {@code JwtAuthenticationFilter} 뒤</b>다. Redis 키가 사용자별로 갈리므로
- * ({@link IdempotencyStore}) 그 앞에서는 사용자를 알 수 없다. 사용자가 앉지 못한 요청은 아무것도 하지
- * 않고 통과시킨다 — 어차피 뒤의 {@code AuthorizationFilter} 가 401 로 끝낸다. 여기서 먼저 400 을 내면
- * <b>인증 실패가 "키가 없다"로 둔갑</b>한다.
+ * <b>자리는 Spring Security 체인 전체의 뒤</b>다. Redis 키가 사용자별로 갈리므로
+ * ({@link IdempotencyStore}) 인증이 끝난 뒤여야 사용자를 알 수 있다. 보통의 {@code Filter} 빈은
+ * 시큐리티 체인({@code springSecurityFilterChain}, 순서 -100)보다 낮은 우선순위로 등록되어 그 안쪽에서
+ * 도는데, 그 자리가 정확히 우리가 원하는 곳이다 — 인증·인가가 모두 끝났고 컨트롤러는 아직이다.
  * <p>
- * 스프링 빈으로 등록하지 않고 {@code SecurityConfig} 가 직접 생성한다. {@code Filter} 타입 빈은 Boot 가
- * 서블릿 필터 체인에도 자동 등록해서 요청마다 두 번 돈다 ({@code JwtAuthenticationFilter} 와 같은 이유).
+ * 빈으로 만드는 자리와 그 이유는 {@link IdempotencyConfig} 에 있다.
+ * <p>
+ * 이 자리의 대가로 미인증 요청은 여기까지 오지 않는다 — 인가 단계에서 이미 401 로 끝난다. 그래도
+ * {@code currentUserId()} 의 null 검사는 남겨 둔다. 나중에 무인증 경로가 검사 대상에 들어오면
+ * 키 없이 400 을 내는 것보다 조용히 통과하는 쪽이 맞다.
  */
 public class IdempotencyFilter extends OncePerRequestFilter {
 

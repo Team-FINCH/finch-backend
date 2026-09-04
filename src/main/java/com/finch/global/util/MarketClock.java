@@ -6,6 +6,7 @@ import java.time.DayOfWeek;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -29,6 +30,11 @@ public class MarketClock {
 	private final FinchProperties properties;
 	private final Clock clock;
 
+	/**
+	 * 생성자가 둘이라 스프링에게 어느 쪽인지 알려 줘야 한다. 표시가 없으면 스프링은 기본 생성자를
+	 * 찾다가 {@code NoSuchMethodException} 으로 기동에 실패한다.
+	 */
+	@Autowired
 	public MarketClock(FinchProperties properties) {
 		this(properties, Clock.system(KST));
 	}

@@ -1,8 +1,5 @@
 package com.finch.global.config;
 
-import com.finch.global.idempotency.IdempotencyFilter;
-import com.finch.global.idempotency.IdempotencyProperties;
-import com.finch.global.idempotency.IdempotencyStore;
 import com.finch.global.security.JwtAuthenticationEntryPoint;
 import com.finch.global.security.JwtAuthenticationFilter;
 import com.finch.global.security.JwtProvider;
@@ -64,9 +61,8 @@ public class SecurityConfig {
 	 * 도메인 설정을 두지 않는 것이 팀 규약이다 (frontConvention 2.3, 프론트 contracts C32).
 	 */
 	@Bean
-	SecurityFilterChain filterChain(HttpSecurity http, JwtProvider jwtProvider, ObjectMapper objectMapper,
-		IdempotencyStore idempotencyStore, IdempotencyProperties idempotencyProperties) throws Exception {
-		JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwtProvider);
+	SecurityFilterChain filterChain(HttpSecurity http, JwtProvider jwtProvider, ObjectMapper objectMapper)
+		throws Exception {
 		return http
 			.csrf(csrf -> csrf.disable())
 			.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -85,12 +81,7 @@ public class SecurityConfig {
 			// UsernamePasswordAuthenticationFilter 자리 앞에 끼운다. 그 필터는 폼 로그인용이라 이 체인에
 			// 없지만, addFilterBefore 는 실제 등록 여부가 아니라 등록된 순서표를 보므로 자리는 정해진다.
 			// 요구 조건은 "인증 판정(AuthorizationFilter)보다 앞" 하나뿐이고 이 자리가 관례다.
-			.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
-			// 멱등성 필터는 JWT 필터 **뒤**여야 한다. Redis 키가 사용자별로 갈리기 때문이다
-			// (IdempotencyFilter 주석). 여기서 참조하는 JwtAuthenticationFilter 는 바로 위 줄에서
-			// 등록되어 순서표에 자리가 잡힌 뒤라 addFilterAfter 가 그 자리를 찾을 수 있다.
-			.addFilterAfter(new IdempotencyFilter(idempotencyStore, objectMapper, idempotencyProperties),
-				JwtAuthenticationFilter.class)
+			.addFilterBefore(new JwtAuthenticationFilter(jwtProvider), UsernamePasswordAuthenticationFilter.class)
 			.build();
 	}
 
