@@ -26,8 +26,14 @@ public class CursorCodec {
 
 	private final ObjectMapper objectMapper;
 
-	/** JSON 한 겹을 두는 이유 — 필드가 늘어도 이전 커서를 계속 읽을 수 있다. 숫자만 넣으면 그게 안 된다. */
-	private record Cursor(long id) {
+	/**
+	 * JSON 한 겹을 두는 이유 — 필드가 늘어도 이전 커서를 계속 읽을 수 있다. 숫자만 넣으면 그게 안 된다.
+	 * <p>
+	 * {@code id} 를 {@code long} 이 아니라 {@code Long} 으로 받는다. 원시 타입이면 {@code id} 가 없는
+	 * JSON 이 <b>0 으로 조용히 채워져</b> "첫 페이지부터 다시"가 아니라 "빈 목록"이 나간다.
+	 * 박싱해 두면 null 로 구분되어 아래에서 400 으로 끊을 수 있다.
+	 */
+	private record Cursor(Long id) {
 	}
 
 	/** 이 페이지의 마지막 행 id 로 다음 커서를 만든다. */
@@ -46,7 +52,11 @@ public class CursorCodec {
 	public long decode(String cursor) {
 		try {
 			byte[] json = Base64.getDecoder().decode(cursor);
-			return objectMapper.readValue(new String(json, StandardCharsets.UTF_8), Cursor.class).id();
+			Long id = objectMapper.readValue(new String(json, StandardCharsets.UTF_8), Cursor.class).id();
+			if (id == null) {
+				throw new IllegalArgumentException("id 가 없는 커서");
+			}
+			return id;
 		} catch (RuntimeException e) {
 			// Base64 형식 위반(IllegalArgumentException)과 JSON 파싱 실패를 한 갈래로 묶는다.
 			// 클라이언트 입장에서 둘 다 "우리가 준 적 없는 값을 보냈다"로 같은 잘못이다.
