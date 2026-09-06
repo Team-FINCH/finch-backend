@@ -1,6 +1,7 @@
 package com.finch.domain.account.service;
 
 import com.finch.domain.account.AccountProperties;
+import com.finch.domain.account.dto.response.AccountBalanceRes;
 import com.finch.domain.account.dto.response.AccountRes;
 import com.finch.domain.account.entity.Account;
 import com.finch.domain.account.port.ValuationPort;
@@ -99,6 +100,19 @@ public class AccountService {
 
 		ValuationPort.Valuation valuation = valuationPort.evaluate(account.getId());
 		return AccountRes.of(account.getCashBalance(), valuation.evaluationAmount(), valuation.asOf());
+	}
+
+	/**
+	 * 잠그지 않고 읽는 금액 스냅샷. 한도 조회·결제 준비의 <b>사전 판정</b>처럼 "지금 값"이면 충분한 곳에서 쓴다.
+	 * <p>
+	 * 돈이 움직이는 판정에는 쓰지 않는다 — 읽은 직후 다른 트랜잭션이 값을 바꿀 수 있다. 그런 판정은
+	 * {@link #lockByUserId} 로 잠근 값으로 한다 (apiSpec 4.2 "진실은 confirm 의 판정").
+	 */
+	@Transactional(readOnly = true)
+	public AccountBalanceRes getBalance(Long userId) {
+		Account account = accountRepository.findByUserId(userId)
+			.orElseThrow(() -> new CustomException(AuthErrorCode.AUTH_INVALID_TOKEN));
+		return AccountBalanceRes.from(account);
 	}
 
 	/**
