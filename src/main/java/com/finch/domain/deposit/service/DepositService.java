@@ -25,6 +25,7 @@ import com.finch.domain.ledger.entity.LedgerType;
 import com.finch.domain.ledger.service.LedgerService;
 import com.finch.global.exception.CustomException;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -89,7 +90,7 @@ public class DepositService {
 			throw new CustomException(DepositErrorCode.DEPOSIT_LIMIT_EXCEEDED, Map.of("remainingAmount", remaining));
 		}
 
-		Instant expiresAt = Instant.now().plus(properties.readyTtl());
+		Instant expiresAt = now().plus(properties.readyTtl());
 		Payment payment = transactionTemplate.execute(status ->
 			paymentRepository.save(Payment.ready(account.accountId(), method, amount, expiresAt)));
 
@@ -155,7 +156,7 @@ public class DepositService {
 			if (locked.getStatus() != PaymentStatus.READY) {
 				return false;
 			}
-			locked.approve(approved.paymentKey(), Instant.now());
+			locked.approve(approved.paymentKey(), now());
 			return true;
 		});
 		if (!Boolean.TRUE.equals(recorded)) {
@@ -189,7 +190,7 @@ public class DepositService {
 			payment.fail(e.getFailCode());
 			throw new DepositRejectedException(DepositErrorCode.DEPOSIT_PAYMENT_FAILED);
 		}
-		payment.approve(approved.paymentKey(), Instant.now());
+		payment.approve(approved.paymentKey(), now());
 		return new MockApproveRes(payment.getId(), approved.paymentKey(), payment.getAmount());
 	}
 
@@ -248,7 +249,7 @@ public class DepositService {
 				Map.of("remainingAmount", remaining));
 		}
 
-		Instant now = Instant.now();
+		Instant now = now();
 		long cashBalanceAfter = locked.cashBalance() + payment.getAmount();
 		LedgerEntryRes entry = ledgerService.record(locked.accountId(), LedgerType.DEPOSIT, payment.getAmount(),
 			cashBalanceAfter, now);
@@ -291,6 +292,18 @@ public class DepositService {
 			.queryParam("code", code.getCode())
 			.build()
 			.toUriString();
+	}
+
+	/**
+	 * 이 서비스가 쓰는 "지금"이다. <b>마이크로초로 자른다.</b>
+	 * <p>
+	 * Postgres {@code TIMESTAMPTZ} 는 마이크로초까지 저장하는데 리눅스 JDK 의 {@code Instant.now()} 는 나노초까지 준다.
+	 * 자르지 않으면 confirm 의 최초 응답({@code depositedAt} = 메모리의 나노초 값)과 재전송 응답(DB 에서 읽은 마이크로초 값)이
+	 * 서로 달라진다 — "같은 paymentKey 는 같은 본문"(apiSpec 4.4)이 깨진다. macOS 는 원래 마이크로초라 로컬에서는 드러나지 않고
+	 * CI 에서만 실패했다. 응답에 나가는 시각은 언제나 DB 에 저장된 값과 같아야 하므로 저장 정밀도에 먼저 맞춘다.
+	 */
+	private static Instant now() {
+		return Instant.now().truncatedTo(ChronoUnit.MICROS);
 	}
 
 	/** 외부 호출이 실패한 건을 짧은 트랜잭션으로 FAILED 로 굳힌다. 호출자의 트랜잭션이 없는 자리에서만 쓴다. */
