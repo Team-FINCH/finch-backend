@@ -36,6 +36,10 @@ public class SecurityConfig {
 		"/api/v1/auth/kakao",
 		// 재발급의 판정 기준은 쿠키뿐이다. Access 가 만료됐을 때 부르는 API 라 무인증이어야 한다.
 		"/api/v1/auth/refresh",
+		// apiSpec 4.3.1 — 카카오페이 승인 콜백. 카카오가 사용자의 브라우저를 이 주소로 리다이렉트하므로 Authorization
+		// 헤더를 붙일 방법이 없다. 열어도 안전한 이유: 이 호출은 결제 건을 APPROVED 로 표시할 뿐 돈을 움직이지 않고,
+		// 위조에 필요한 pg_token 은 카카오가 검증한다. 원장 반영은 JWT 가 있는 POST /deposits/confirm 뿐이다.
+		"/api/v1/deposits/kakao/approval",
 		"/actuator/health/**",
 		"/actuator/prometheus",
 	};

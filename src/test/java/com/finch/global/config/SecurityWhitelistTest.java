@@ -76,6 +76,20 @@ class SecurityWhitelistTest {
 		mockMvc.perform(post("/api/v1/auth/refresh")).andExpect(status().isOk());
 	}
 
+	/** 카카오가 브라우저를 리다이렉트하는 콜백이라 토큰을 붙일 수 없다. 막히면 결제창을 마친 사용자가 401 JSON 을 본다. */
+	@Test
+	@DisplayName("카카오 승인 콜백은 무인증이다 — 브라우저 리다이렉트라 토큰이 없다")
+	void kakaoApprovalCallbackIsPermitted() throws Exception {
+		mockMvc.perform(get("/api/v1/deposits/kakao/approval")).andExpect(status().isOk());
+	}
+
+	/** 콜백 하나만 열려 있어야 한다. 이 경로가 열리면 남의 결제 건을 승인하는 API 가 공개된다. */
+	@Test
+	@DisplayName("모의 이체 승인은 화이트리스트에 없다 — 본인 확인이 필요하다")
+	void mockApproveRequiresAuthentication() throws Exception {
+		mockMvc.perform(post("/api/v1/deposits/1/mock-approve")).andExpect(status().isUnauthorized());
+	}
+
 	/**
 	 * 화이트리스트에 메서드를 함께 지정하지 않은 이유를 못 박는다. `POST` 만 열면 경로가 존재하는데도
 	 * 401 이 나가는데, apiSpec 11.1 은 그 경우를 405 METHOD_NOT_ALLOWED 로 정했다.
@@ -107,11 +121,12 @@ class SecurityWhitelistTest {
 	static class StubController {
 
 		@GetMapping({"/actuator/health", "/actuator/health/readiness", "/actuator/health/liveness",
-			"/actuator/prometheus", "/api/v1/anything"})
+			"/actuator/prometheus", "/api/v1/anything", "/api/v1/deposits/kakao/approval"})
 		void open() {
 		}
 
-		@PostMapping({"/api/v1/auth/kakao", "/api/v1/auth/refresh", "/api/v1/auth/logout"})
+		@PostMapping({"/api/v1/auth/kakao", "/api/v1/auth/refresh", "/api/v1/auth/logout",
+			"/api/v1/deposits/1/mock-approve"})
 		void posted() {
 		}
 	}

@@ -13,8 +13,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.finch.domain.deposit.dto.response.DepositLimitRes;
 import com.finch.domain.deposit.dto.response.DepositReadyRes;
+import com.finch.domain.deposit.dto.response.MockApproveRes;
 import com.finch.domain.deposit.entity.PaymentMethod;
 import com.finch.domain.deposit.exception.DepositErrorCode;
+import com.finch.domain.deposit.exception.DepositRejectedException;
+import com.finch.domain.deposit.gateway.MockScenario;
 import com.finch.domain.deposit.service.DepositService;
 import com.finch.global.config.SecurityConfig;
 import com.finch.global.exception.CustomException;
@@ -225,6 +228,138 @@ class DepositControllerTest {
 				.header(HttpHeaders.AUTHORIZATION, bearer(VALID_TOKEN))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(body);
+		}
+	}
+
+	@Nested
+	@DisplayName("GET /deposits/kakao/approval")
+	class KakaoApproval {
+
+		/** 카카오가 사용자의 브라우저를 여기로 보낸다. 토큰이 없어야 정상이고, 응답은 JSON 이 아니라 302 다. */
+		@Test
+		@DisplayName("무인증으로 호출되고 서비스가 준 URL 로 302 한다")
+		void redirectsWithoutAuthentication() throws Exception {
+			given(depositService.kakaoApproval(77L, "pg-token"))
+				.willReturn("http://localhost:5173/deposit/complete?paymentId=77&paymentKey=A1&amount=1000000");
+
+			mockMvc.perform(get("/api/v1/deposits/kakao/approval")
+					.param("paymentId", "77")
+					.param("pg_token", "pg-token"))
+				.andExpect(status().isFound())
+				.andExpect(header().string(HttpHeaders.LOCATION,
+					"http://localhost:5173/deposit/complete?paymentId=77&paymentKey=A1&amount=1000000"));
+		}
+
+		/** 실패해도 본문 에러(§1.3)가 아니다 — 브라우저가 보는 응답이라 JSON 을 보여줄 화면이 없다. */
+		@Test
+		@DisplayName("실패도 본문 에러가 아니라 실패 URL 로 302 한다")
+		void redirectsOnFailure() throws Exception {
+			given(depositService.kakaoApproval(77L, "pg-token"))
+				.willReturn("http://localhost:5173/deposit/fail?paymentId=77&code=DEPOSIT_PG_UNAVAILABLE");
+
+			mockMvc.perform(get("/api/v1/deposits/kakao/approval")
+					.param("paymentId", "77")
+					.param("pg_token", "pg-token"))
+				.andExpect(status().isFound())
+				.andExpect(header().string(HttpHeaders.LOCATION,
+					"http://localhost:5173/deposit/fail?paymentId=77&code=DEPOSIT_PG_UNAVAILABLE"));
+		}
+
+		@Test
+		@DisplayName("pg_token 이 없어도 400 이 아니라 서비스에 넘긴다 — 판정은 서비스가 하고 답은 302 다")
+		void passesMissingTokenToService() throws Exception {
+			given(depositService.kakaoApproval(77L, null))
+				.willReturn("http://localhost:5173/deposit/fail?paymentId=77&code=DEPOSIT_PAYMENT_FAILED");
+
+			mockMvc.perform(get("/api/v1/deposits/kakao/approval").param("paymentId", "77"))
+				.andExpect(status().isFound());
+
+			verify(depositService).kakaoApproval(77L, null);
+		}
+	}
+
+	@Nested
+	@DisplayName("POST /deposits/{paymentId}/mock-approve")
+	class MockApprove {
+
+		@Test
+		@DisplayName("본문 없이 부르면 SUCCESS 시나리오이고 paymentId · paymentKey · amount 를 돌려준다")
+		void defaultsToSuccessScenario() throws Exception {
+			givenLoggedIn(42L);
+			given(depositService.mockApprove(42L, 77L, MockScenario.SUCCESS))
+				.willReturn(new MockApproveRes(77L, "mock_pk_9f2c", 1_000_000L));
+
+			mockMvc.perform(post("/api/v1/deposits/77/mock-approve")
+					.header(HttpHeaders.AUTHORIZATION, bearer(VALID_TOKEN)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.paymentId").value(77))
+				.andExpect(jsonPath("$.paymentKey").value("mock_pk_9f2c"))
+				.andExpect(jsonPath("$.amount").value(1000000));
+		}
+
+		@Test
+		@DisplayName("scenario 를 보내면 그대로 서비스에 넘긴다 — 실패 시나리오는 409 DEPOSIT_PAYMENT_FAILED")
+		void passesScenario() throws Exception {
+			givenLoggedIn(42L);
+			given(depositService.mockApprove(42L, 77L, MockScenario.TIMEOUT))
+				.willThrow(new DepositRejectedException(DepositErrorCode.DEPOSIT_PAYMENT_FAILED));
+
+			mockMvc.perform(post("/api/v1/deposits/77/mock-approve")
+					.header(HttpHeaders.AUTHORIZATION, bearer(VALID_TOKEN))
+					.contentType(MediaType.APPLICATION_JSON)
+					.content("{\"scenario\":\"TIMEOUT\"}"))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("DEPOSIT_PAYMENT_FAILED"));
+		}
+
+		@Test
+		@DisplayName("scenario 가 열거값 밖이면 400 INVALID_REQUEST")
+		void rejectsUnknownScenario() throws Exception {
+			givenLoggedIn(42L);
+
+			mockMvc.perform(post("/api/v1/deposits/77/mock-approve")
+					.header(HttpHeaders.AUTHORIZATION, bearer(VALID_TOKEN))
+					.contentType(MediaType.APPLICATION_JSON)
+					.content("{\"scenario\":\"EXPLODE\"}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+			verifyNoInteractions(depositService);
+		}
+
+		@Test
+		@DisplayName("없는 건이거나 내 것이 아니면 404 DEPOSIT_NOT_FOUND")
+		void notFound() throws Exception {
+			givenLoggedIn(42L);
+			given(depositService.mockApprove(42L, 999L, MockScenario.SUCCESS))
+				.willThrow(new CustomException(DepositErrorCode.DEPOSIT_NOT_FOUND));
+
+			mockMvc.perform(post("/api/v1/deposits/999/mock-approve")
+					.header(HttpHeaders.AUTHORIZATION, bearer(VALID_TOKEN)))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("DEPOSIT_NOT_FOUND"));
+		}
+
+		@Test
+		@DisplayName("KAKAOPAY 건에 부르면 409 DEPOSIT_INVALID_STATE")
+		void invalidState() throws Exception {
+			givenLoggedIn(42L);
+			given(depositService.mockApprove(42L, 77L, MockScenario.SUCCESS))
+				.willThrow(new CustomException(DepositErrorCode.DEPOSIT_INVALID_STATE));
+
+			mockMvc.perform(post("/api/v1/deposits/77/mock-approve")
+					.header(HttpHeaders.AUTHORIZATION, bearer(VALID_TOKEN)))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("DEPOSIT_INVALID_STATE"));
+		}
+
+		@Test
+		@DisplayName("토큰이 없으면 401 이고 서비스는 돌지 않는다")
+		void requiresAuthentication() throws Exception {
+			mockMvc.perform(post("/api/v1/deposits/77/mock-approve"))
+				.andExpect(status().isUnauthorized());
+
+			verifyNoInteractions(depositService);
 		}
 	}
 
