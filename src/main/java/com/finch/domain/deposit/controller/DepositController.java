@@ -1,7 +1,10 @@
 package com.finch.domain.deposit.controller;
 
+import com.finch.domain.deposit.dto.request.DepositConfirmReq;
 import com.finch.domain.deposit.dto.request.DepositReadyReq;
 import com.finch.domain.deposit.dto.request.MockApproveReq;
+import com.finch.domain.deposit.dto.response.DepositConfirmOutcome;
+import com.finch.domain.deposit.dto.response.DepositConfirmRes;
 import com.finch.domain.deposit.dto.response.DepositLimitRes;
 import com.finch.domain.deposit.dto.response.DepositReadyRes;
 import com.finch.domain.deposit.dto.response.MockApproveRes;
@@ -66,5 +69,19 @@ public class DepositController {
 		@RequestBody(required = false) MockApproveReq request) {
 		MockApproveReq body = request == null ? new MockApproveReq(null) : request;
 		return depositService.mockApprove(userId, paymentId, body.scenarioOrDefault());
+	}
+
+	/**
+	 * 충전 확정 (apiSpec 4.4). 예수금이 늘어나는 유일한 엔드포인트다.
+	 * <p>
+	 * 최초 반영은 201, 같은 {@code paymentKey} 재전송은 200 이고 본문은 같다. 새로고침·네트워크 재시도로 이 호출이
+	 * 두 번 도착하는 것이 정상 경로라 두 번째를 에러로 답하지 않는다. {@code Idempotency-Key} 헤더는 쓰지 않는다 (§1.4).
+	 */
+	@PostMapping("/confirm")
+	public ResponseEntity<DepositConfirmRes> confirm(@LoginUser long userId,
+		@Valid @RequestBody DepositConfirmReq request) {
+		DepositConfirmOutcome outcome = depositService.confirm(userId, request.paymentId(), request.paymentKey(),
+			request.amount());
+		return ResponseEntity.status(outcome.replayed() ? HttpStatus.OK : HttpStatus.CREATED).body(outcome.body());
 	}
 }

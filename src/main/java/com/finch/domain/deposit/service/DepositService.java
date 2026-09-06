@@ -3,9 +3,12 @@ package com.finch.domain.deposit.service;
 import com.finch.domain.account.dto.response.AccountBalanceRes;
 import com.finch.domain.account.service.AccountService;
 import com.finch.domain.deposit.DepositProperties;
+import com.finch.domain.deposit.dto.response.DepositConfirmOutcome;
+import com.finch.domain.deposit.dto.response.DepositConfirmRes;
 import com.finch.domain.deposit.dto.response.DepositLimitRes;
 import com.finch.domain.deposit.dto.response.DepositReadyRes;
 import com.finch.domain.deposit.dto.response.MockApproveRes;
+import com.finch.domain.deposit.entity.Deposit;
 import com.finch.domain.deposit.entity.Payment;
 import com.finch.domain.deposit.entity.PaymentMethod;
 import com.finch.domain.deposit.entity.PaymentStatus;
@@ -17,6 +20,8 @@ import com.finch.domain.deposit.gateway.PaymentGatewayException;
 import com.finch.domain.deposit.gateway.PaymentGatewayRouter;
 import com.finch.domain.deposit.repository.DepositRepository;
 import com.finch.domain.deposit.repository.PaymentRepository;
+import com.finch.domain.ledger.dto.response.LedgerEntryRes;
+import com.finch.domain.ledger.entity.LedgerType;
 import com.finch.domain.ledger.service.LedgerService;
 import com.finch.global.exception.CustomException;
 import java.time.Instant;
@@ -186,6 +191,89 @@ public class DepositService {
 		}
 		payment.approve(approved.paymentKey(), Instant.now());
 		return new MockApproveRes(payment.getId(), approved.paymentKey(), payment.getAmount());
+	}
+
+	/**
+	 * 충전 확정 (apiSpec 4.4, erd.md §3.3). <b>예수금이 늘어나는 유일한 경로</b>다.
+	 * <p>
+	 * <b>한 트랜잭션</b>이고 순서가 곧 설계다:
+	 * <ol>
+	 *   <li>{@code payment} FOR UPDATE — 같은 키로 동시에 온 요청을 여기서 줄 세운다. 계좌보다 <b>먼저</b> 잠근다.
+	 *       결제 건이 계좌보다 좁은 단위라, 계좌를 먼저 잠그면 같은 사용자의 주문까지 결제 판정을 기다린다.</li>
+	 *   <li>소유·키·상태·금액 판정 — DONE 이면 <b>재생</b>이고 여기서 끝난다. 예수금은 한 번만 는다.</li>
+	 *   <li>{@code account} FOR UPDATE ({@code AccountService.lockByUserId}) — 잔고와 누적액의 진실은 잠근 값이다.</li>
+	 *   <li>누적 한도 최종 판정 — ready 의 사전 판정 뒤에 다른 충전이 끼어들었을 수 있다.</li>
+	 *   <li>원장 INSERT → deposit INSERT → 계좌 스냅샷 UPDATE → payment DONE. 하나라도 실패하면 전부 롤백이다.</li>
+	 * </ol>
+	 * 외부 호출이 없다. PG 승인은 이미 끝났고 그 증거가 {@code payment_key} 다 ({@code PaymentGateway} 주석).
+	 * <p>
+	 * <b>멱등의 근거는 클라이언트 UUID 가 아니라 PG 가 발급한 {@code paymentKey} 다.</b> 결제창을 거쳐 돌아온
+	 * 요청은 최초 호출과 다른 화면·다른 세션일 수 있어 클라이언트가 만든 키로는 "같은 결제인가"를 판정할 수 없다.
+	 * 키는 우리 DB 에만 있고 UNIQUE 라, 같은 키의 두 번째 요청은 DONE 행을 만나 최초 응답을 재생한다.
+	 * <p>
+	 * 키 대조가 상태 판정보다 <b>뒤</b>가 아니라 <b>앞</b>인 이유 — 남의 키를 들고 온 요청은 상태가 무엇이든 "없는
+	 * 키"(404)여야 한다. 승인 전 건은 키가 없어 대조를 건너뛰고 상태 판정으로 가서 "승인 전" 409 가 된다.
+	 * <p>
+	 * 금액 불일치·누적 초과는 그 건을 FAILED 로 굳힌 채 거절한다 — {@link DepositRejectedException} 이 롤백을 막는다.
+	 */
+	@Transactional(noRollbackFor = DepositRejectedException.class)
+	public DepositConfirmOutcome confirm(Long userId, Long paymentId, String paymentKey, long amount) {
+		AccountBalanceRes account = accountService.getBalance(userId);
+		Payment payment = paymentRepository.findByIdForUpdate(paymentId)
+			.filter(p -> p.getAccountId().equals(account.accountId()))
+			.orElseThrow(() -> new CustomException(DepositErrorCode.DEPOSIT_NOT_FOUND));
+		if (payment.getPaymentKey() != null && !payment.matchesKey(paymentKey)) {
+			throw new CustomException(DepositErrorCode.DEPOSIT_NOT_FOUND);
+		}
+		switch (payment.getStatus()) {
+			case DONE -> {
+				return replay(payment);
+			}
+			case READY -> throw new CustomException(DepositErrorCode.DEPOSIT_NOT_APPROVED);
+			case FAILED -> throw new CustomException(DepositErrorCode.DEPOSIT_PAYMENT_FAILED);
+			case APPROVED -> {
+				// 아래로
+			}
+		}
+		if (amount != payment.getAmount()) {
+			payment.fail("AMOUNT_MISMATCH");
+			throw new DepositRejectedException(DepositErrorCode.DEPOSIT_AMOUNT_MISMATCH);
+		}
+
+		AccountBalanceRes locked = accountService.lockByUserId(userId);
+		long remaining = properties.cumulativeLimit() - locked.totalDepositedAmount();
+		if (payment.getAmount() > remaining) {
+			payment.fail("LIMIT_EXCEEDED");
+			throw new DepositRejectedException(DepositErrorCode.DEPOSIT_LIMIT_EXCEEDED,
+				Map.of("remainingAmount", remaining));
+		}
+
+		Instant now = Instant.now();
+		long cashBalanceAfter = locked.cashBalance() + payment.getAmount();
+		LedgerEntryRes entry = ledgerService.record(locked.accountId(), LedgerType.DEPOSIT, payment.getAmount(),
+			cashBalanceAfter, now);
+		Deposit deposit = depositRepository.save(Deposit.of(entry.id(), locked.accountId(), payment.getAmount(),
+			payment.getPaymentMethod(), payment.getId(), now));
+		accountService.applyDeposit(locked.accountId(), payment.getAmount(), cashBalanceAfter);
+		payment.complete(now);
+
+		log.info("충전 확정 paymentId={} depositId={} amount={} cashBalanceAfter={}", payment.getId(), deposit.getId(),
+			payment.getAmount(), cashBalanceAfter);
+		return new DepositConfirmOutcome(DepositConfirmRes.of(deposit.getId(), payment.getAmount(),
+			payment.getPaymentMethod(), cashBalanceAfter, now), false);
+	}
+
+	/**
+	 * DONE 인 건의 최초 응답을 되찾는다. 응답을 따로 저장하지 않는다 — 다섯 값이 전부 deposit 행과 원장 행에 있고,
+	 * 그 둘은 불변이라 언제 읽어도 최초와 같다. 저장본을 따로 두면 원본과 갈라질 자리만 하나 늘어난다.
+	 */
+	private DepositConfirmOutcome replay(Payment payment) {
+		Deposit deposit = depositRepository.findByPaymentId(payment.getId())
+			.orElseThrow(() -> new IllegalStateException("DONE 인 결제에 deposit 행이 없다 (불변식 7). paymentId=" + payment.getId()));
+		LedgerEntryRes entry = ledgerService.findById(deposit.getLedgerEntryId())
+			.orElseThrow(() -> new IllegalStateException("deposit 에 짝이 되는 원장 행이 없다 (불변식 6). depositId=" + deposit.getId()));
+		return new DepositConfirmOutcome(DepositConfirmRes.of(deposit.getId(), deposit.getAmount(),
+			deposit.getPaymentMethod(), entry.cashBalanceAfter(), entry.occurredAt()), true);
 	}
 
 	private String successRedirect(Long paymentId, String paymentKey, long amount) {

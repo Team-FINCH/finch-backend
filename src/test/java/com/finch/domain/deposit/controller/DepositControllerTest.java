@@ -11,6 +11,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.finch.domain.deposit.dto.response.DepositConfirmOutcome;
+import com.finch.domain.deposit.dto.response.DepositConfirmRes;
 import com.finch.domain.deposit.dto.response.DepositLimitRes;
 import com.finch.domain.deposit.dto.response.DepositReadyRes;
 import com.finch.domain.deposit.dto.response.MockApproveRes;
@@ -360,6 +362,136 @@ class DepositControllerTest {
 				.andExpect(status().isUnauthorized());
 
 			verifyNoInteractions(depositService);
+		}
+	}
+
+	@Nested
+	@DisplayName("POST /deposits/confirm")
+	class Confirm {
+
+		private static final String BODY = "{\"paymentId\":77,\"paymentKey\":\"mock_pk_9f2c\",\"amount\":1000000}";
+
+		@Test
+		@DisplayName("최초 반영은 201 이고 depositId · amount · paymentMethod · cashBalanceAfter · depositedAt(KST) 를 돌려준다")
+		void firstConfirmIsCreated() throws Exception {
+			givenLoggedIn(42L);
+			given(depositService.confirm(42L, 77L, "mock_pk_9f2c", 1_000_000L)).willReturn(new DepositConfirmOutcome(
+				DepositConfirmRes.of(55L, 1_000_000L, PaymentMethod.KAKAOPAY, 2_250_000L,
+					Instant.parse("2026-08-20T05:31:02Z")), false));
+
+			mockMvc.perform(confirm(BODY))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.depositId").value(55))
+				.andExpect(jsonPath("$.amount").value(1000000))
+				.andExpect(jsonPath("$.paymentMethod").value("KAKAOPAY"))
+				.andExpect(jsonPath("$.cashBalanceAfter").value(2250000))
+				.andExpect(jsonPath("$.depositedAt").value("2026-08-20T14:31:02+09:00"));
+		}
+
+		/** 새로고침·재시도로 두 번 도착하는 것이 정상 경로다. 두 번째는 에러가 아니라 200 + 같은 본문이다. */
+		@Test
+		@DisplayName("같은 paymentKey 재전송은 200 이고 본문은 최초와 같다")
+		void replayIsOk() throws Exception {
+			givenLoggedIn(42L);
+			given(depositService.confirm(42L, 77L, "mock_pk_9f2c", 1_000_000L)).willReturn(new DepositConfirmOutcome(
+				DepositConfirmRes.of(55L, 1_000_000L, PaymentMethod.KAKAOPAY, 2_250_000L,
+					Instant.parse("2026-08-20T05:31:02Z")), true));
+
+			mockMvc.perform(confirm(BODY))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.depositId").value(55))
+				.andExpect(jsonPath("$.cashBalanceAfter").value(2250000));
+		}
+
+		@Test
+		@DisplayName("paymentKey 가 비어 있으면 400 INVALID_REQUEST 이고 서비스는 돌지 않는다")
+		void rejectsBlankKey() throws Exception {
+			givenLoggedIn(42L);
+
+			mockMvc.perform(confirm("{\"paymentId\":77,\"paymentKey\":\"\",\"amount\":1000000}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+				.andExpect(jsonPath("$.detail.paymentKey").exists());
+
+			verifyNoInteractions(depositService);
+		}
+
+		@Test
+		@DisplayName("없는 건 · 내 것이 아님 · 다른 키는 404 DEPOSIT_NOT_FOUND")
+		void notFound() throws Exception {
+			givenLoggedIn(42L);
+			given(depositService.confirm(42L, 77L, "mock_pk_9f2c", 1_000_000L))
+				.willThrow(new CustomException(DepositErrorCode.DEPOSIT_NOT_FOUND));
+
+			mockMvc.perform(confirm(BODY))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("DEPOSIT_NOT_FOUND"));
+		}
+
+		@Test
+		@DisplayName("승인 전 건은 409 DEPOSIT_NOT_APPROVED")
+		void notApproved() throws Exception {
+			givenLoggedIn(42L);
+			given(depositService.confirm(42L, 77L, "mock_pk_9f2c", 1_000_000L))
+				.willThrow(new CustomException(DepositErrorCode.DEPOSIT_NOT_APPROVED));
+
+			mockMvc.perform(confirm(BODY))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("DEPOSIT_NOT_APPROVED"));
+		}
+
+		@Test
+		@DisplayName("실패로 굳은 건은 409 DEPOSIT_PAYMENT_FAILED")
+		void paymentFailed() throws Exception {
+			givenLoggedIn(42L);
+			given(depositService.confirm(42L, 77L, "mock_pk_9f2c", 1_000_000L))
+				.willThrow(new CustomException(DepositErrorCode.DEPOSIT_PAYMENT_FAILED));
+
+			mockMvc.perform(confirm(BODY))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("DEPOSIT_PAYMENT_FAILED"));
+		}
+
+		@Test
+		@DisplayName("금액 불일치는 400 DEPOSIT_AMOUNT_MISMATCH")
+		void amountMismatch() throws Exception {
+			givenLoggedIn(42L);
+			given(depositService.confirm(42L, 77L, "mock_pk_9f2c", 1_000_000L))
+				.willThrow(new DepositRejectedException(DepositErrorCode.DEPOSIT_AMOUNT_MISMATCH));
+
+			mockMvc.perform(confirm(BODY))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("DEPOSIT_AMOUNT_MISMATCH"));
+		}
+
+		@Test
+		@DisplayName("누적 한도 초과는 409 DEPOSIT_LIMIT_EXCEEDED 이고 detail.remainingAmount 를 싣는다")
+		void limitExceeded() throws Exception {
+			givenLoggedIn(42L);
+			given(depositService.confirm(42L, 77L, "mock_pk_9f2c", 1_000_000L))
+				.willThrow(new DepositRejectedException(DepositErrorCode.DEPOSIT_LIMIT_EXCEEDED,
+					Map.of("remainingAmount", 500_000L)));
+
+			mockMvc.perform(confirm(BODY))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("DEPOSIT_LIMIT_EXCEEDED"))
+				.andExpect(jsonPath("$.detail.remainingAmount").value(500000));
+		}
+
+		@Test
+		@DisplayName("토큰이 없으면 401 이고 서비스는 돌지 않는다")
+		void requiresAuthentication() throws Exception {
+			mockMvc.perform(post("/api/v1/deposits/confirm").contentType(MediaType.APPLICATION_JSON).content(BODY))
+				.andExpect(status().isUnauthorized());
+
+			verifyNoInteractions(depositService);
+		}
+
+		private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder confirm(String body) {
+			return post("/api/v1/deposits/confirm")
+				.header(HttpHeaders.AUTHORIZATION, bearer(VALID_TOKEN))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(body);
 		}
 	}
 

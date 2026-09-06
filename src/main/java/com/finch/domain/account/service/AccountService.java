@@ -132,13 +132,36 @@ public class AccountService {
 	 * <p>
 	 * 어노테이션이 없어도 동작은 같다 — 호출자의 트랜잭션에 그대로 참여하고, 트랜잭션이 없으면
 	 * 아래 검사가 먼저 막는다.
+	 * <p>
+	 * <b>엔티티가 아니라 스냅샷 DTO 를 돌려준다.</b> 다른 도메인이 {@code Account} 를 import 하지 않게 하기
+	 * 위해서다 (backConvention 2.4 규칙 3). 잠근 행 자체는 이 트랜잭션의 영속성 컨텍스트에 남아 있으므로,
+	 * 호출자가 같은 트랜잭션에서 {@link #applyDeposit} 를 부르면 그 행이 다시 조회 없이 갱신된다.
 	 */
-	public Account lockByUserId(Long userId) {
+	public AccountBalanceRes lockByUserId(Long userId) {
 		if (!TransactionSynchronizationManager.isActualTransactionActive()) {
 			throw new IllegalStateException(
 				"lockByUserId 는 트랜잭션 안에서만 부른다 — 밖에서 부르면 락이 즉시 풀려 잔고 검사가 무의미해진다");
 		}
-		return accountRepository.findByUserIdForUpdate(userId)
+		Account account = accountRepository.findByUserIdForUpdate(userId)
 			.orElseThrow(() -> new CustomException(AuthErrorCode.AUTH_INVALID_TOKEN));
+		return AccountBalanceRes.from(account);
+	}
+
+	/**
+	 * 충전을 계좌 스냅샷에 반영한다. <b>confirm 트랜잭션에서 원장 기록 직후에만</b> 부른다 (erd.md §3.3).
+	 * <p>
+	 * {@code MANDATORY} 인 이유는 {@code LedgerService.record} 와 같다 — 원장과 같은 트랜잭션에서 커밋되거나
+	 * 함께 롤백되어야 불변식 1·2 가 성립한다. 호출 전에 {@link #lockByUserId} 로 같은 행을 잠갔어야 한다.
+	 * 잠갔다면 {@code findById} 는 영속성 컨텍스트의 그 객체를 돌려주고 SQL 을 내지 않는다. 잠그지 않고 부르면
+	 * 잠기지 않은 행을 고치는 것이라, 그 코드는 테스트를 통과하고 경합에서만 틀린다. 그래서 두 메서드는 한 쌍이다.
+	 *
+	 * @param cashBalanceAfter 원장이 기록한 "기록 직후 잔고". 여기서 다시 더하지 않는다 ({@code Account.applyBalance}).
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	public void applyDeposit(Long accountId, long amount, long cashBalanceAfter) {
+		Account account = accountRepository.findById(accountId)
+			.orElseThrow(() -> new IllegalStateException("잠근 계좌가 사라졌다. accountId=" + accountId));
+		account.applyBalance(cashBalanceAfter);
+		account.addDeposited(amount);
 	}
 }

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finch.TestcontainersConfiguration;
+import com.finch.domain.account.dto.response.AccountBalanceRes;
 import com.finch.domain.account.dto.response.AccountRes;
 import com.finch.domain.account.entity.Account;
 import com.finch.domain.account.repository.AccountRepository;
@@ -138,10 +139,11 @@ class AccountServiceTest {
 		Long userId = newUserId();
 		accountService.ensureAccount(userId);
 
-		Account locked = transactionTemplate.execute(status -> accountService.lockByUserId(userId));
+		AccountBalanceRes locked = transactionTemplate.execute(status -> accountService.lockByUserId(userId));
 
 		assertThat(locked).isNotNull();
-		assertThat(locked.getUserId()).isEqualTo(userId);
+		assertThat(locked.accountId()).isEqualTo(accountRepository.findByUserId(userId).orElseThrow().getId());
+		assertThat(locked.cashBalance()).isZero();
 	}
 
 	@Test
