@@ -93,6 +93,36 @@ finch:
     # 과거를 다시 계산할 필요가 없다.
     initial-cash: 0
 
+  deposit:
+    # 충전 한도 (apiSpec 4.1·4.2). 두 값은 DB CHECK(ck_payment_amount·ck_account_deposited)와 같아야 한다 —
+    # 여기만 올리면 INSERT 가 제약 위반으로 실패한다. 바꿀 때는 마이그레이션이 먼저다.
+    per-request-limit: 10000000
+    cumulative-limit: 100000000
+    # 결제창으로 갔다가 돌아오지 않은 READY 건이 만료되기까지. 응답의 expiresAt 이 이 값이고,
+    # 지난 건은 하루 1회 배치(PaymentExpiryScheduler)가 FAILED(EXPIRED) 로 정리한다.
+    ready-ttl: 15m
+    # 우리 서버의 외부 주소. 카카오가 사용자의 브라우저를 되돌려 보낼 승인 콜백 URL 을 이 값으로 만든다.
+    # 카카오페이 콘솔(developers.kakaopay.com)에 이 도메인이 등록돼 있어야 결제창이 뜬다.
+    public-base-url: ${FINCH_PUBLIC_BASE_URL:http://localhost:8080}
+    # 프론트 주소. 결제가 끝난 사용자를 보낼 화면과 모의 이체 화면이 여기 있다.
+    # 배포는 nginx 가 같은 오리진으로 붙이므로 운영에서는 public-base-url 과 같은 값이다. 로컬은 Vite dev 서버다.
+    front-base-url: ${FINCH_FRONT_BASE_URL:http://localhost:5173}
+    # 아래 세 경로는 프론트 라우트다. 프론트가 화면을 만들면서 이름을 정하면 여기만 맞춘다 (apiSpec 4.2·4.3.1).
+    success-path: /deposit/complete
+    fail-path: /deposit/fail
+    transfer-checkout-path: /deposit/transfer
+    kakaopay:
+      # false 면 카카오를 치지 않고 MockTransferGateway 가 KAKAOPAY 도 맡는다. 키 없는 환경(테스트·CI)용이고
+      # 테스트 설정(src/test/resources/config)이 false 로 덮는다. 운영은 true 다.
+      enabled: true
+      # dev/prod Secret Key. 비밀값이라 기본값이 없다 — 누락되면 기동에 실패해 바로 드러난다.
+      secret-key: ${KAKAOPAY_SECRET_KEY}
+      # 카카오가 제공하는 테스트 가맹점 코드. 결제창·승인 흐름은 진짜지만 실제 금전 이동이 없다.
+      cid: TC0ONETIME
+      base-url: https://open-api.kakaopay.com
+      # 응답 대기 제한. 사용자가 결제창 URL 을 기다리고 있는 호출이라 길게 잡을 이유가 없다.
+      timeout: 10s
+
   market:
     # 평일 09:00~15:30(KST) 밖에서도 장이 열린 것으로 본다. 시연·테스트 전용이라 운영은 false 다.
     # 발표(9/28)는 장 마감 뒤일 수 있고, 그때 주문이 전부 ORDER_MARKET_CLOSED 로 막히면 데모가 성립하지 않는다.
