@@ -134,14 +134,14 @@ finch:
 
   idempotency:
     # Idempotency-Key 를 요구할 경로. 여기 없는 경로는 필터를 타지 않는다.
-    # apiSpec 1.4·4.2·7.1·11.1·12 가 이 둘을 멱등성 필수로 적고 있고, 이 목록이 그 계약의 구현이다.
+    # apiSpec 1.4·4.5·7.1·11.1·12(v0.8) 가 이 둘을 멱등성 필수로 적고 있고, 이 목록이 그 계약의 구현이다.
     # 둘 중 하나를 빼면 그 엔드포인트는 조용히 멱등성 없이 열린다 — IdempotencyPropertiesTest 가 막는다.
     #
-    # 충전을 ready/confirm 2단계로 바꾸고 멱등 기준을 PG 가 발급한 키로 옮기는 논의가 있지만,
-    # apiSpec 이 바뀌기 전까지는 위 명세가 계약이다. 명세가 개정되면 이 목록도 같은 MR 에서 바꾼다.
+    # 충전(/deposits/**)은 여기 없다. v0.8 에서 충전이 ready/confirm 2단계가 되면서 멱등 기준이 클라이언트 UUID 가
+    # 아니라 PG 가 발급한 paymentKey 로 바뀌었다 (apiSpec 1.4). 여기 넣으면 ready 가 헤더 없음 400 으로 막힌다.
     paths:
-      - /api/v1/deposits
       - /api/v1/orders
+      - /api/v1/withdrawals
     # 처리 중 표시의 수명. 짧으면 처리가 끝나기 전에 풀려 같은 요청이 두 번 실행되고,
     # 길면 서버가 죽었을 때 재시도가 그만큼 막힌다.
     in-progress-ttl: 60s
