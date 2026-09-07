@@ -46,6 +46,7 @@ public class StockService {
 	private final HoldingQueryPort holdingQueryPort;
 	private final WatchlistQueryPort watchlistQueryPort;
 	private final ApplicationEventPublisher eventPublisher;
+	private final CandleSyncService candleSyncService;
 
 	/**
 	 * 검색 (apiSpec 5.1). 컨트롤러가 길이·범위를 검증했지만 앞뒤 공백을 걷어낸 뒤 다시 본다 — {@code " 삼"} 은 2글자 검증을
@@ -83,10 +84,13 @@ public class StockService {
 	/**
 	 * 캔들 (apiSpec 5.3). 오늘(KST)부터 {@code period.days()} 달력일 전까지의 일봉. 봉이 없으면 빈 배열 — 에러가 아니다.
 	 * 상장폐지 종목은 상세와 같은 이유로 404.
+	 * <p>
+	 * <b>이 메서드에는 {@code @Transactional} 이 없다.</b> 봉이 없는 종목이면 {@link CandleSyncService#backfillIfEmpty} 가 KIS 를 부르는데
+	 * (S10 lazy 적재) 외부 HTTP 는 트랜잭션 밖이어야 한다. 읽기 둘은 각자 짧은 트랜잭션으로 충분하다 — 지연 로딩이 없다.
 	 */
-	@Transactional(readOnly = true)
 	public CandleRes candles(String stockCode, CandlePeriod period) {
 		findActive(stockCode);
+		candleSyncService.backfillIfEmpty(stockCode);
 		LocalDate to = LocalDate.now(KstTime.ZONE);
 		LocalDate from = to.minusDays(period.days());
 		List<DailyCandle> candles = dailyCandleRepository.findByStockCodeAndTradeDateBetweenOrderByTradeDateAsc(stockCode, from,

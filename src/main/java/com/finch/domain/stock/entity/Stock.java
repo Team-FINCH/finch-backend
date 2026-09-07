@@ -121,6 +121,14 @@ public class Stock {
 		return changed;
 	}
 
+	/** 일봉 배치가 마지막 봉 종가로 기준가를 맞춘다 ({@code CandleSyncService}). 0 이하는 무시한다. */
+	public void applyPreviousClose(long closePrice, Instant now) {
+		if (closePrice > 0 && (this.previousClose == null || this.previousClose != closePrice)) {
+			this.previousClose = closePrice;
+			this.updatedAt = now;
+		}
+	}
+
 	/** 마스터 파일에서 사라진 종목. 상장폐지로 본다 (erd.md §2.7). */
 	public void deactivate(Instant now) {
 		this.isActive = false;

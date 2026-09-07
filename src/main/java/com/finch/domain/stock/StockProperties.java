@@ -12,7 +12,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *                    프론트가 차트를 바로 그리게 하는 시연용이고, S10 이 실데이터를 채우면 false 로 내린다.
  */
 @ConfigurationProperties("finch.stock")
-public record StockProperties(@DefaultValue Master master, @DefaultValue("true") boolean seedOnEmpty) {
+public record StockProperties(@DefaultValue Master master, @DefaultValue("true") boolean seedOnEmpty,
+	@DefaultValue Candle candle) {
 
 	/**
 	 * @param source        {@code kis} 면 KIS 마스터 파일을 내려받고, {@code csv} 면 {@code resources/stock/seed.csv} 만 쓴다.
@@ -29,6 +30,15 @@ public record StockProperties(@DefaultValue Master master, @DefaultValue("true")
 		@DefaultValue("true") boolean syncOnStartup,
 		@DefaultValue("0 0 7 * * *") String cron
 	) {
+	}
+
+	/**
+	 * 일봉 적재 ({@code CandleSyncService}, S10).
+	 *
+	 * @param backfillDays 봉이 없는 종목을 처음 볼 때 받아 오는 기간. 1년 = 차트의 가장 긴 탭(1Y)이다.
+	 * @param cron         일일 갱신. 16:00 KST — 장 마감(15:30) 뒤라 당일 봉이 확정돼 있다. 리더만 돈다.
+	 */
+	public record Candle(@DefaultValue("365") int backfillDays, @DefaultValue("0 0 16 * * *") String cron) {
 	}
 
 	public enum Source {

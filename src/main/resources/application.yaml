@@ -136,8 +136,13 @@ finch:
       # 매일 07:00 KST — 장 시작 전이고 전일 상장·폐지가 마스터에 반영된 뒤다. 두 인스턴스가 같이 돌아도 같은 UPSERT 라 리더 락이 없다.
       cron: "0 0 7 * * *"
     # daily_candle 이 비어 있으면 resources/stock/candles-seed.csv (5종목 250 영업일, 실제 시세가 아닌 랜덤워크) 를 넣는다.
-    # 프론트가 차트를 바로 그리게 하는 시연용이다. S10 일봉 배치가 실데이터를 채우면 false 로 내린다.
+    # 프론트가 차트를 바로 그리게 하는 시연용이다. 운영(prod 프로파일)은 false 다 — KIS 실데이터(lazy 적재·일일 배치)가 채운다.
     seed-on-empty: true
+    candle:
+      # 봉이 없는 종목을 처음 볼 때 받아 오는 기간 (CandleSyncService lazy 적재). 1년 = 차트의 가장 긴 탭.
+      backfill-days: 365
+      # 일일 갱신. 16:00 KST — 장 마감(15:30) 뒤라 당일 봉이 확정돼 있다. 리더만 돈다. provider=fake 면 원천이 비어 아무것도 더하지 않는다.
+      cron: "0 0 16 * * *"
 
   price:
     # fake: 랜덤워크로 관심 종목 시세를 만든다 (S7). kis: 실공급자 (S10, 앱키 필요).
@@ -241,3 +246,11 @@ logging:
   structured:
     format:
       console: ecs
+finch:
+  price:
+    # 운영은 KIS 실공급자다 (backend_story S10 완료 조건 — provider=kis 는 운영 프로파일만). 로컬·테스트는 fake.
+    provider: kis
+  stock:
+    # 실데이터가 채우므로 랜덤워크 시드를 넣지 않는다. 시드가 들어가면 그 5종목은 "봉이 있다"고 판정돼 lazy 적재가 건너뛰고,
+    # 일일 배치가 가짜 봉 뒤에 진짜 봉을 이어 붙인다.
+    seed-on-empty: false
