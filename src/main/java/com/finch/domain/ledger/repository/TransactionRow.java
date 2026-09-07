@@ -1,6 +1,6 @@
 package com.finch.domain.ledger.repository;
 
-import java.time.OffsetDateTime;
+import java.time.Instant;
 
 /**
  * {@link TransactionQueryRepository} 의 네이티브 쿼리 한 행. Spring Data 인터페이스 프로젝션이라 <b>SQL 의 별칭이
@@ -9,9 +9,9 @@ import java.time.OffsetDateTime;
  * 엔티티가 아니다. 원장 행에 상세(trade·deposit·withdrawal)와 종목명을 LEFT JOIN 으로 붙인 <b>읽기 전용 결과</b>이고,
  * 유형에 따라 대부분의 컬럼이 null 이다. 어느 컬럼이 채워지는지는 원장 유형이 정한다 (erd.md §2.3 상세 테이블 표).
  * <p>
- * {@code occurredAt} 이 {@code Instant} 가 아니라 {@code OffsetDateTime} 인 이유 — Hibernate 가 네이티브 쿼리의
- * {@code TIMESTAMPTZ} 를 {@code OffsetDateTime} 으로 돌려주고, 프로젝션 프록시는 그 타입을 바꿔 주지 않는다.
- * 응답 표기로의 변환은 {@code TransactionRes.from} 이 한다.
+ * {@code occurredAt} 은 {@code Instant} 다 — Hibernate 가 네이티브 쿼리의 {@code TIMESTAMPTZ} 를 {@code Instant} 로
+ * 돌려주고, 프로젝션 프록시는 타입을 바꿔 주지 않는다({@code OffsetDateTime} 으로 선언하면 "no matching Converter" 로
+ * 죽는다). 저장은 UTC, 표기만 KST 라는 규약(backConvention 6장)과도 맞다. 응답 표기로의 변환은 {@code TransactionRes.from} 이 한다.
  */
 public interface TransactionRow {
 
@@ -21,7 +21,7 @@ public interface TransactionRow {
 	/** 원장 유형 문자열. {@code LedgerType.valueOf} 로 읽는다 — DB CHECK 가 목록을 보장한다. */
 	String getType();
 
-	OffsetDateTime getOccurredAt();
+	Instant getOccurredAt();
 
 	/** 이하 trade 컬럼. BUY·SELL 에서만 채워진다. */
 	String getStockCode();
