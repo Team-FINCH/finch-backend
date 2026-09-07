@@ -9,6 +9,7 @@ import com.finch.domain.order.entity.OrderSide;
 import com.finch.domain.order.entity.Trade;
 import com.finch.domain.order.repository.TradeRepository;
 import com.finch.domain.portfolio.service.HoldingCommandService;
+import com.finch.domain.portfolio.service.HoldingCommandService.SellResult;
 import com.finch.domain.stock.port.HoldingQueryPort;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -86,8 +87,21 @@ public class OrderExecutor {
 		return new Execution(trade, cashBalanceAfter);
 	}
 
+	/**
+	 * 매도. 매수와 순서가 하나 다르다 — <b>보유 갱신이 {@code trade} INSERT 보다 먼저</b>다. {@code trade.avg_buy_price}·
+	 * {@code realized_profit} 에 넣을 값을 {@link HoldingCommandService#applySell} 이 돌려주기 때문이다. 실현손익은 거기서
+	 * 한 번만 계산하고 여기서는 옮겨 적는다. 전량 매도면 보유 행은 {@code quantity = 0} 으로 남고(erd.md §2.6) {@code trade} 는
+	 * 그때의 평단을 그대로 갖는다.
+	 */
 	private Execution sell(AccountBalanceRes locked, String stockCode, long quantity, long price, Instant now) {
-		throw new UnsupportedOperationException("매도 체결은 다음 커밋에서 붙인다");
+		long amount = quantity * price;
+		long cashBalanceAfter = locked.cashBalance() + amount;
+		LedgerEntryRes entry = ledgerService.record(locked.accountId(), LedgerType.SELL, amount, cashBalanceAfter, now);
+		SellResult sold = holdingCommandService.applySell(locked.accountId(), stockCode, quantity, price);
+		Trade trade = tradeRepository.save(Trade.sell(entry.id(), locked.accountId(), stockCode, quantity, price,
+			sold.avgBuyPriceAtSell(), sold.realizedProfit(), now));
+		accountService.applyTrade(locked.accountId(), cashBalanceAfter);
+		return new Execution(trade, cashBalanceAfter);
 	}
 
 	/**
