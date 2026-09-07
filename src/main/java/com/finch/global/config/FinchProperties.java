@@ -19,7 +19,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  */
 @ConfigurationProperties("finch")
 public record FinchProperties(@DefaultValue Market market, @DefaultValue Http http,
-	@DefaultValue LeaderLock leaderLock) {
+	@DefaultValue LeaderLock leaderLock, @DefaultValue Internal internal) {
 
 	/**
 	 * 장 시간 판정 ({@code MarketClock}).
@@ -47,5 +47,15 @@ public record FinchProperties(@DefaultValue Market market, @DefaultValue Http ht
 	 * @param renewInterval 리더가 락을 늘리는 주기. TTL 보다 충분히 짧아야 살아 있는 리더가 락을 놓치지 않는다.
 	 */
 	public record LeaderLock(@DefaultValue("10s") Duration ttl, @DefaultValue("3s") Duration renewInterval) {
+	}
+
+	/**
+	 * {@code /internal/v1} 인증 ({@code global/security/InternalTokenFilter}).
+	 *
+	 * @param token AI 서버가 {@code X-Internal-Token} 으로 보내는 값과 같아야 한다. 비밀값이라 기본값이 없고, 비어 있으면 그 경로는
+	 *              전부 401 이다. 백엔드 → AI 방향의 토큰({@code finch.ai.internal-token})과는 <b>별도 변수</b>다 — 한쪽이 새면
+	 *              한쪽만 바꾼다.
+	 */
+	public record Internal(String token) {
 	}
 }

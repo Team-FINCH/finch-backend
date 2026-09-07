@@ -81,6 +81,7 @@ class MarketClockTest {
 		return new FinchProperties(
 			new FinchProperties.Market(alwaysOpen),
 			new FinchProperties.Http(Duration.ofSeconds(3)),
-			new FinchProperties.LeaderLock(Duration.ofSeconds(10), Duration.ofSeconds(3)));
+			new FinchProperties.LeaderLock(Duration.ofSeconds(10), Duration.ofSeconds(3)),
+			new FinchProperties.Internal("test-only-internal-token"));
 	}
 }
