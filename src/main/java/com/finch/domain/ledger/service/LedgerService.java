@@ -16,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>
  * `ledger` 는 1층(피참조 전용)이라 다른 도메인을 참조하지 않는다. 그래서 "얼마를 기록할지"는 전부
  * 호출자가 정해서 넘긴다 — 이 서비스는 계좌를 읽지도, 잔고를 계산하지도 않는다. 유형별 기록 주체는
- * account(`INITIAL_GRANT`) · deposit(`DEPOSIT`) · order(`BUY`·`SELL`) 로 고정돼 있다.
+ * account(`INITIAL_GRANT`) · deposit(`DEPOSIT`) · withdrawal(`WITHDRAWAL`) · order(`BUY`·`SELL`) 로 고정돼 있다.
  */
 @Service
 @RequiredArgsConstructor

@@ -22,7 +22,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * (backConvention 2.4 규칙 3).
  * <p>
  * 이 클래스가 하는 일이 셋이다 — 계좌를 열고, 요약을 읽고, <b>돈이 움직이는 트랜잭션에 락을 건다.</b>
- * 셋째가 이후 스토리(충전·출금·주문)의 전제라서 가장 중요하다.
+ * 셋째가 이후 스토리(충전·출금·주문)의 전제라서 가장 중요하다. 락을 건 뒤 스냅샷을 고치는 메서드
+ * ({@link #applyDeposit}·{@link #applyWithdrawal})도 여기 있다 — 잔고를 고칠 수 있는 곳이 한 클래스여야 한다.
  */
 @Service
 @RequiredArgsConstructor
@@ -163,5 +164,23 @@ public class AccountService {
 			.orElseThrow(() -> new IllegalStateException("잠근 계좌가 사라졌다. accountId=" + accountId));
 		account.applyBalance(cashBalanceAfter);
 		account.addDeposited(amount);
+	}
+
+	/**
+	 * 출금을 계좌 스냅샷에 반영한다. <b>출금 트랜잭션에서 원장 기록 직후에만</b> 부른다 (erd.md §3.4).
+	 * <p>
+	 * {@link #applyDeposit} 와 한 쌍이고 전제도 같다 — {@code MANDATORY}, 호출 전에 {@link #lockByUserId} 로 같은 행을
+	 * 잠갔어야 한다. 다른 점 하나: <b>{@code totalDepositedAmount} 를 건드리지 않는다.</b> 그 값은 계좌 평생 누적
+	 * <b>충전액</b>이라 출금과 무관하다 (apiSpec 4.5, erd.md §2.2). 되돌리면 충전↔출금 반복으로 누적 한도를 무한히
+	 * 우회할 수 있고, 불변식 2(누적 충전액 = SUM(deposit.amount))도 깨진다. 그래서 금액 인자가 없다 — 이 메서드가
+	 * 받는 것은 "기록 직후 잔고" 하나이고, 그 값은 이미 원장 행에 들어가 있다.
+	 * <p>
+	 * 매수(S9)도 잔고만 줄이므로 같은 메서드를 써도 되지만, 그건 그 스토리가 정한다.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	public void applyWithdrawal(Long accountId, long cashBalanceAfter) {
+		Account account = accountRepository.findById(accountId)
+			.orElseThrow(() -> new IllegalStateException("잠근 계좌가 사라졌다. accountId=" + accountId));
+		account.applyBalance(cashBalanceAfter);
 	}
 }
