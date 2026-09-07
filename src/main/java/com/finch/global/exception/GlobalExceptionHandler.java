@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSourceResolvable;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -36,11 +37,17 @@ public class GlobalExceptionHandler {
 		return respond(e.getErrorCode(), e.getDetail());
 	}
 
-	/** AI 서버 에러는 코드·문구·상태를 그대로 통과시키고 requestId 를 보존한다 (apiSpec 10.3, 10.4). */
+	/**
+	 * AI 서버 에러는 코드·문구·상태를 그대로 통과시키고 requestId 를 보존한다 (apiSpec 10.3, 10.4).
+	 * 503 {@code AI_UPSTREAM_RATE_LIMITED} 는 {@code Retry-After} 를 싣는다 — 재시도 간격은 서버가 정한다 (§1.4 와 같은 원칙).
+	 */
 	@ExceptionHandler(AiRelayException.class)
 	public ResponseEntity<ErrorResponse> handleAiRelay(AiRelayException e) {
-		return ResponseEntity.status(e.getStatus())
-			.body(ErrorResponse.ofAiRelay(e.getCode(), e.getMessage(), e.getDetail(), e.getRequestId()));
+		ResponseEntity.BodyBuilder builder = ResponseEntity.status(e.getStatus());
+		if (e.getRetryAfterSeconds() != null) {
+			builder.header(HttpHeaders.RETRY_AFTER, String.valueOf(e.getRetryAfterSeconds()));
+		}
+		return builder.body(ErrorResponse.ofAiRelay(e.getCode(), e.getMessage(), e.getDetail(), e.getRequestId()));
 	}
 
 	/** 검증 실패의 detail 은 {필드명: 사유} 맵이다 (apiSpec 1.3). */
