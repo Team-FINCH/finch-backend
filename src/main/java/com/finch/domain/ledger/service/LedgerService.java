@@ -5,6 +5,7 @@ import com.finch.domain.ledger.entity.LedgerEntry;
 import com.finch.domain.ledger.entity.LedgerType;
 import com.finch.domain.ledger.repository.LedgerEntryRepository;
 import java.time.Instant;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -44,5 +45,15 @@ public class LedgerService {
 		LedgerEntry saved = ledgerEntryRepository.save(
 			LedgerEntry.record(accountId, type, cashDelta, cashBalanceAfter, occurredAt));
 		return LedgerEntryRes.from(saved);
+	}
+
+	/**
+	 * 원장 한 줄을 DTO 로 읽는다. 상세 테이블(deposit·trade)이 자기 행의 {@code cash_balance_after}·{@code occurred_at}
+	 * 을 되찾을 때 쓴다 — confirm 재전송이 최초 응답을 재생하려면 그 값이 필요하고, 그 값은 원장에만 있다.
+	 * 목록 조회가 아니다. {@code GET /transactions} 는 DTO 프로젝션으로 따로 만든다 (S4).
+	 */
+	@Transactional(readOnly = true)
+	public Optional<LedgerEntryRes> findById(Long id) {
+		return ledgerEntryRepository.findById(id).map(LedgerEntryRes::from);
 	}
 }

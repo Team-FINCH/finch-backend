@@ -11,3 +11,11 @@ jwt:
 kakao:
   client-id: test-client-id
   client-secret: test-client-secret
+
+finch:
+  deposit:
+    kakaopay:
+      # 테스트는 카카오를 치지 않는다. MockTransferGateway 가 KAKAOPAY 도 맡는다 (backend_story S3 완료 조건).
+      enabled: false
+      # 비밀값 필수 규칙 때문에 값은 있어야 한다. enabled=false 라 쓰이지 않는다.
+      secret-key: test-only-kakaopay-secret

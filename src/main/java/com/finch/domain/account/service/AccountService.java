@@ -1,6 +1,7 @@
 package com.finch.domain.account.service;
 
 import com.finch.domain.account.AccountProperties;
+import com.finch.domain.account.dto.response.AccountBalanceRes;
 import com.finch.domain.account.dto.response.AccountRes;
 import com.finch.domain.account.entity.Account;
 import com.finch.domain.account.port.ValuationPort;
@@ -102,6 +103,19 @@ public class AccountService {
 	}
 
 	/**
+	 * 잠그지 않고 읽는 금액 스냅샷. 한도 조회·결제 준비의 <b>사전 판정</b>처럼 "지금 값"이면 충분한 곳에서 쓴다.
+	 * <p>
+	 * 돈이 움직이는 판정에는 쓰지 않는다 — 읽은 직후 다른 트랜잭션이 값을 바꿀 수 있다. 그런 판정은
+	 * {@link #lockByUserId} 로 잠근 값으로 한다 (apiSpec 4.2 "진실은 confirm 의 판정").
+	 */
+	@Transactional(readOnly = true)
+	public AccountBalanceRes getBalance(Long userId) {
+		Account account = accountRepository.findByUserId(userId)
+			.orElseThrow(() -> new CustomException(AuthErrorCode.AUTH_INVALID_TOKEN));
+		return AccountBalanceRes.from(account);
+	}
+
+	/**
 	 * 계좌 행을 잠그고 가져온다. <b>이후 모든 금액 변경 트랜잭션의 직렬화 지점</b>이다 —
 	 * 충전(S3)·출금·주문(S9)이 전부 이 메서드로 시작한다. <b>다른 락을 만들지 않는다.</b>
 	 * <p>
@@ -118,13 +132,36 @@ public class AccountService {
 	 * <p>
 	 * 어노테이션이 없어도 동작은 같다 — 호출자의 트랜잭션에 그대로 참여하고, 트랜잭션이 없으면
 	 * 아래 검사가 먼저 막는다.
+	 * <p>
+	 * <b>엔티티가 아니라 스냅샷 DTO 를 돌려준다.</b> 다른 도메인이 {@code Account} 를 import 하지 않게 하기
+	 * 위해서다 (backConvention 2.4 규칙 3). 잠근 행 자체는 이 트랜잭션의 영속성 컨텍스트에 남아 있으므로,
+	 * 호출자가 같은 트랜잭션에서 {@link #applyDeposit} 를 부르면 그 행이 다시 조회 없이 갱신된다.
 	 */
-	public Account lockByUserId(Long userId) {
+	public AccountBalanceRes lockByUserId(Long userId) {
 		if (!TransactionSynchronizationManager.isActualTransactionActive()) {
 			throw new IllegalStateException(
 				"lockByUserId 는 트랜잭션 안에서만 부른다 — 밖에서 부르면 락이 즉시 풀려 잔고 검사가 무의미해진다");
 		}
-		return accountRepository.findByUserIdForUpdate(userId)
+		Account account = accountRepository.findByUserIdForUpdate(userId)
 			.orElseThrow(() -> new CustomException(AuthErrorCode.AUTH_INVALID_TOKEN));
+		return AccountBalanceRes.from(account);
+	}
+
+	/**
+	 * 충전을 계좌 스냅샷에 반영한다. <b>confirm 트랜잭션에서 원장 기록 직후에만</b> 부른다 (erd.md §3.3).
+	 * <p>
+	 * {@code MANDATORY} 인 이유는 {@code LedgerService.record} 와 같다 — 원장과 같은 트랜잭션에서 커밋되거나
+	 * 함께 롤백되어야 불변식 1·2 가 성립한다. 호출 전에 {@link #lockByUserId} 로 같은 행을 잠갔어야 한다.
+	 * 잠갔다면 {@code findById} 는 영속성 컨텍스트의 그 객체를 돌려주고 SQL 을 내지 않는다. 잠그지 않고 부르면
+	 * 잠기지 않은 행을 고치는 것이라, 그 코드는 테스트를 통과하고 경합에서만 틀린다. 그래서 두 메서드는 한 쌍이다.
+	 *
+	 * @param cashBalanceAfter 원장이 기록한 "기록 직후 잔고". 여기서 다시 더하지 않는다 ({@code Account.applyBalance}).
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	public void applyDeposit(Long accountId, long amount, long cashBalanceAfter) {
+		Account account = accountRepository.findById(accountId)
+			.orElseThrow(() -> new IllegalStateException("잠근 계좌가 사라졌다. accountId=" + accountId));
+		account.applyBalance(cashBalanceAfter);
+		account.addDeposited(amount);
 	}
 }

@@ -27,15 +27,23 @@ class IdempotencyPropertiesTest {
 	private final IdempotencyProperties properties = bindFromApplicationYaml();
 
 	/**
-	 * apiSpec §1.4·§4.2·§7.1·§11.1·§12 가 이 둘을 멱등성 키 필수로 적고 있다.
-	 * 충전을 2단계로 바꾸는 논의가 있지만, 명세가 바뀌기 전까지는 이 목록이 계약이다 —
+	 * apiSpec v0.8 §1.4·§4.5·§7.1·§11.1·§12 가 주문과 출금을 멱등성 키 필수로 적고 있다.
+	 * 충전은 v0.8 에서 빠졌다 — 멱등 기준이 PG 가 발급한 {@code paymentKey} 로 바뀌었고(§4.4), 결제창을 거쳐
+	 * 돌아온 요청은 최초 호출과 다른 세션일 수 있어 클라이언트 UUID 로는 판정할 수 없다.
 	 * 명세를 고치는 MR 이 이 테스트도 함께 고쳐야 한다. 그 마찰이 의도다.
 	 */
 	@Test
-	@DisplayName("멱등성 검사 경로는 apiSpec 이 키 필수로 정한 두 엔드포인트다")
+	@DisplayName("멱등성 검사 경로는 apiSpec 이 키 필수로 정한 주문·출금 둘이다 — 충전은 paymentKey 멱등이라 없다")
 	void pathsMatchSpec() {
 		assertThat(properties.paths())
-			.containsExactlyInAnyOrder("/api/v1/deposits", "/api/v1/orders");
+			.containsExactlyInAnyOrder("/api/v1/orders", "/api/v1/withdrawals");
+	}
+
+	/** 충전 경로가 다시 들어오면 ready 가 헤더 없음 400 으로 막힌다. 이름을 못 박아 둔다. */
+	@Test
+	@DisplayName("충전 경로는 목록에 없다")
+	void depositPathsAreExcluded() {
+		assertThat(properties.paths()).noneMatch(path -> path.startsWith("/api/v1/deposits"));
 	}
 
 	@Test

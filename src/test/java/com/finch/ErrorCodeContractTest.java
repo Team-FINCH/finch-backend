@@ -63,8 +63,14 @@ class ErrorCodeContractTest {
 		Map.entry("AI_UPSTREAM_TIMEOUT", HttpStatus.GATEWAY_TIMEOUT),
 		// 충전
 		Map.entry("DEPOSIT_AMOUNT_INVALID", HttpStatus.BAD_REQUEST),
+		Map.entry("DEPOSIT_AMOUNT_MISMATCH", HttpStatus.BAD_REQUEST),
+		Map.entry("DEPOSIT_NOT_FOUND", HttpStatus.NOT_FOUND),
 		Map.entry("DEPOSIT_PER_REQUEST_LIMIT_EXCEEDED", HttpStatus.CONFLICT),
 		Map.entry("DEPOSIT_LIMIT_EXCEEDED", HttpStatus.CONFLICT),
+		Map.entry("DEPOSIT_NOT_APPROVED", HttpStatus.CONFLICT),
+		Map.entry("DEPOSIT_PAYMENT_FAILED", HttpStatus.CONFLICT),
+		Map.entry("DEPOSIT_INVALID_STATE", HttpStatus.CONFLICT),
+		Map.entry("DEPOSIT_PG_UNAVAILABLE", HttpStatus.BAD_GATEWAY),
 		// 종목 · 관심 종목
 		Map.entry("STOCK_NOT_FOUND", HttpStatus.NOT_FOUND),
 		Map.entry("WATCHLIST_LIMIT_EXCEEDED", HttpStatus.CONFLICT),
