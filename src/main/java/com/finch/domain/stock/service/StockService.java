@@ -3,6 +3,7 @@ package com.finch.domain.stock.service;
 import com.finch.domain.stock.dto.request.CandlePeriod;
 import com.finch.domain.stock.dto.response.CandleRes;
 import com.finch.domain.stock.dto.response.StockDetailRes;
+import com.finch.domain.stock.dto.response.StockPriceRes;
 import com.finch.domain.stock.dto.response.StockSearchRes;
 import com.finch.domain.stock.dto.response.TradabilityRes;
 import com.finch.domain.stock.entity.DailyCandle;
@@ -91,6 +92,18 @@ public class StockService {
 		List<DailyCandle> candles = dailyCandleRepository.findByStockCodeAndTradeDateBetweenOrderByTradeDateAsc(stockCode, from,
 			to);
 		return CandleRes.of(stockCode, period, candles);
+	}
+
+	/**
+	 * 현재가 단건 (apiSpec 5.4). <b>이 엔드포인트를 stock 이 소유한다</b> — 없는 종목에 {@code STOCK_NOT_FOUND} 를 내야 하는데
+	 * 그 판정은 stock 만 할 수 있고, price(1층)가 stock(1층)을 부르는 것은 같은 층 참조다. 존재를 확인한 뒤 시세는 포트로 받는다.
+	 * <p>
+	 * 다건 조회({@code GET /stocks/prices})는 존재 판정이 없어 price 도메인이 소유한다 — 캐시에 없으면 "값 없음" 이면 그만이다.
+	 */
+	@Transactional(readOnly = true)
+	public StockPriceRes price(String stockCode) {
+		findActive(stockCode);
+		return StockPriceRes.of(stockCode, priceQueryPort.latest(stockCode));
 	}
 
 	/** 주문(S9)이 부른다. 없는 종목·상장폐지는 {@code exists=false}, 거래정지는 사유와 함께. 예외를 던지지 않는다 — 판정은 주문의 몫이다. */

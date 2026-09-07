@@ -3,6 +3,7 @@ package com.finch.domain.stock.controller;
 import com.finch.domain.stock.dto.request.CandlePeriod;
 import com.finch.domain.stock.dto.response.CandleRes;
 import com.finch.domain.stock.dto.response.StockDetailRes;
+import com.finch.domain.stock.dto.response.StockPriceRes;
 import com.finch.domain.stock.dto.response.StockSearchRes;
 import com.finch.domain.stock.service.StockService;
 import com.finch.global.security.LoginUser;
@@ -47,6 +48,17 @@ public class StockController {
 	@GetMapping("/{stockCode}")
 	public StockDetailRes detail(@LoginUser long userId, @PathVariable String stockCode) {
 		return stockService.detail(userId, stockCode);
+	}
+
+	/**
+	 * 현재가 단건 (apiSpec 5.4). 폴링 방식일 때 프론트가 부른다.
+	 * <p>
+	 * <b>이 경로만 stock 이 소유하고 다건({@code /stocks/prices})은 price 가 소유한다.</b> 이유는 {@code StockService.price} 주석에 있다 —
+	 * 여기는 없는 종목에 404 를 내야 하고 그 판정은 stock 만 할 수 있다.
+	 */
+	@GetMapping("/{stockCode}/price")
+	public StockPriceRes price(@PathVariable String stockCode) {
+		return stockService.price(stockCode);
 	}
 
 	/** 캔들. {@code period} 기본 {@code 1M}. 문자열로 받아 {@link CandlePeriod#from} 이 읽는다 — {@code 1M} 은 enum 이름이 될 수 없다. */
