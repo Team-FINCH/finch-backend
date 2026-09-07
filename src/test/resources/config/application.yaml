@@ -24,6 +24,14 @@ finch:
       source: csv
     # 일봉 시드도 넣는다 — 캔들 API 테스트가 삼성전자 등 5종목의 봉을 전제한다.
     seed-on-empty: true
+  kis:
+    # 비밀값 필수 규칙 때문에 값은 있어야 한다. provider 가 fake 라 KIS 빈은 만들어지지 않고 이 값은 쓰이지 않는다.
+    keys:
+      - app-key: test-only-kis-app-key
+        app-secret: test-only-kis-app-secret
+        label: test
+    # provider=kis 로 띄우는 테스트가 있어도 배경 폴링은 돌리지 않는다. 테스트는 tick() 을 직접 부른다.
+    auto-start: false
   deposit:
     kakaopay:
       # 테스트는 카카오를 치지 않는다. MockTransferGateway 가 KAKAOPAY 도 맡는다 (backend_story S3 완료 조건).

@@ -160,6 +160,30 @@ finch:
       max-move-rate: 0.005
       min-price: 100
 
+  kis:
+    # KIS 실공급자 (S10). finch.price.provider=kis 일 때만 쓰인다.
+    # 실전 https://openapi.koreainvestment.com:9443 · 모의 https://openapivts.koreainvestment.com:29443
+    base-url: https://openapi.koreainvestment.com:9443
+    # 앱키 풀. KIS 의 초당 호출 한도와 실시간 등록 한도는 앱키(계정) 단위라 항목을 더하면 수용량이 그만큼 는다
+    # (apiSpec 5.6 관계식 4). 지금은 1개로 운영한다. 부족하면 아래에 항목을 추가하고 새 시크릿(KIS_APP_KEY_2 …)을
+    # Jenkins finch-env 와 k8s Secret 에 넣는다 — 코드 변경 없음. label 은 로그·메트릭·Redis 키에 쓰는 이름이고 앱키 원문은
+    # 어디에도 찍히지 않는다. 팀원 키를 넣는 것은 그 사람 계정으로 호출하는 것이라 팀 합의가 먼저다.
+    #
+    # 비밀값이라 기본값이 없다 — provider=fake 인 로컬도 값은 있어야 기동한다(테스트 설정이 가짜 값으로 덮는다).
+    keys:
+      - app-key: ${KIS_APP_KEY}
+        app-secret: ${KIS_APP_SECRET}
+        label: primary
+    # 관심 종목 순회 주기 (apiSpec 5.6 "3초 목표"). stale-after(10초)보다 짧아야 한다 — 관계식 3.
+    poll-interval: 3s
+    # 키당 초당 호출 상한. S0-1 가정값(실전 계정 20, 모의 계정 2). 실측 후 값만 바꾼다. 수용량 = 키 수 × 이 값 × 순회 주기.
+    rate-per-second: 20
+    timeout: 5s
+    # 접근토큰(24시간)을 만료 이 시간 전에 버린다. 재발급은 키당 분당 1회로 제한돼 있어 Redis 에 두고 인스턴스가 나눠 쓴다.
+    token-refresh-margin: 5m
+    # 기동과 함께 폴링을 돌린다. 테스트 설정이 false 로 덮는다.
+    auto-start: true
+
   market:
     # 평일 09:00~15:30(KST) 밖에서도 장이 열린 것으로 본다. 시연·테스트 전용이라 운영은 false 다.
     # 발표(9/28)는 장 마감 뒤일 수 있고, 그때 주문이 전부 ORDER_MARKET_CLOSED 로 막히면 데모가 성립하지 않는다.
