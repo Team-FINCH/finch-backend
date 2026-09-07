@@ -11,6 +11,7 @@ import java.util.List;
  * `GET /watchlist` 응답 (apiSpec 6.3).
  *
  * @param count    지금 담긴 개수. {@code items.size()} 와 같지만 함께 내려준다 — 화면이 "12 / 50" 을 그릴 때 배열을 세지 않게 한다.
+ *                 상장폐지 종목은 목록에서 빠지고 이 숫자에도 들어가지 않으며, 한도 판정도 같은 기준이다.
  * @param maxCount 상한 50. 서버가 정한 값이라 프론트가 상수로 갖지 않는다.
  */
 public record WatchlistRes(int count, int maxCount, List<Item> items) {

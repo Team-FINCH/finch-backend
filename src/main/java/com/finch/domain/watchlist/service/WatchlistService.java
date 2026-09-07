@@ -64,7 +64,7 @@ public class WatchlistService {
 		if (watchlistItemRepository.existsByUserIdAndStockCode(userId, stockCode)) {
 			throw new CustomException(WatchlistErrorCode.WATCHLIST_ALREADY_EXISTS);
 		}
-		if (watchlistItemRepository.countByUserId(userId) >= MAX_ITEMS) {
+		if (watchlistItemRepository.countActiveByUserId(userId) >= MAX_ITEMS) {
 			throw new CustomException(WatchlistErrorCode.WATCHLIST_LIMIT_EXCEEDED);
 		}
 		try {
@@ -89,6 +89,9 @@ public class WatchlistService {
 	 * 종목과 섞인다.
 	 * <p>
 	 * 시세와 보유 여부 모두 벌크 1회다. 50개짜리 목록에서 낱개로 물으면 그대로 N+1 이 된다.
+	 * <p>
+	 * <b>상장폐지 종목은 빠진다.</b> 검색·상세·최근 본 종목이 이미 그렇고, 여기만 남겨 두면 탭했을 때 404 가 나는 항목이 목록에
+	 * 있게 된다. 한도 판정도 같은 기준이라 화면의 {@code count} 와 등록 결과가 어긋나지 않는다.
 	 */
 	@Transactional(readOnly = true)
 	public WatchlistRes list(Long userId, WatchlistSort sort) {

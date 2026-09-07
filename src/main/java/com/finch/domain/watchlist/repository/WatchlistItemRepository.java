@@ -17,6 +17,7 @@ public interface WatchlistItemRepository extends JpaRepository<WatchlistItem, Lo
 		  FROM watchlist_item w
 		  JOIN stock s ON s.stock_code = w.stock_code
 		 WHERE w.user_id = :userId
+		   AND s.is_active = true
 		""";
 
 	/** {@code sort=REGISTERED}(기본). {@code ix_watchlist_user (user_id, created_at DESC)} 를 탄다. */
@@ -47,7 +48,20 @@ public interface WatchlistItemRepository extends JpaRepository<WatchlistItem, Lo
 	 */
 	boolean existsByUserIdAndStockCode(Long userId, String stockCode);
 
-	long countByUserId(Long userId);
+	/**
+	 * 한도 판정용. <b>상장폐지 종목은 세지 않는다</b> — 목록에 보이지 않는 항목이 자리를 차지하면 "47 / 50 인데 왜 못 담지" 가 된다.
+	 * 목록 쿼리의 {@code is_active} 조건과 같은 이유이고, 둘이 갈리면 화면의 숫자와 등록 결과가 어긋난다.
+	 * <p>
+	 * 행을 지우지는 않는다. 그 종목이 다시 상장되면 목록에도 한도에도 돌아온다.
+	 */
+	@Query(nativeQuery = true, value = """
+		SELECT count(*)
+		  FROM watchlist_item w
+		  JOIN stock s ON s.stock_code = w.stock_code
+		 WHERE w.user_id = :userId
+		   AND s.is_active = true
+		""")
+	long countActiveByUserId(Long userId);
 
 	/** 없는 대상을 해제해도 204 다 (apiSpec 11.2). 반환값은 로그용이 아니라 테스트용이다. */
 	int deleteByUserIdAndStockCode(Long userId, String stockCode);

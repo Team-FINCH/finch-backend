@@ -272,6 +272,36 @@ class WatchlistServiceTest {
 			assertThat(held).containsEntry("005930", true).containsEntry("000660", false);
 		}
 
+		/**
+		 * 검색·상세·최근 본 종목이 모두 상장폐지를 거른다. 여기만 남겨 두면 탭했을 때 404 가 나는 항목이 목록에 있게 된다.
+		 * 한도도 같은 기준이라야 "47 / 50 인데 왜 못 담지" 가 생기지 않는다.
+		 */
+		@Test
+		@DisplayName("상장폐지 종목은 목록·count·한도 판정에서 모두 빠진다")
+		void inactiveDisappearsFromListAndCount() {
+			Long userId = newUserId();
+			givenNoPrices();
+			String code = "ZZ8803";
+			stockRepository.saveAndFlush(Stock.of(code, "폐지예정종목",
+				com.finch.domain.stock.entity.Market.KOSPI, false, null, 1_000L, Instant.now()));
+			watchlistService.add(userId, code);
+			watchlistService.add(userId, "005930");
+			assertThat(watchlistService.list(userId, WatchlistSort.REGISTERED).count()).isEqualTo(2);
+
+			Stock dead = stockRepository.findById(code).orElseThrow();
+			dead.deactivate(Instant.now());
+			stockRepository.saveAndFlush(dead);
+
+			WatchlistRes res = watchlistService.list(userId, WatchlistSort.REGISTERED);
+			assertThat(res.count()).isEqualTo(1);
+			assertThat(res.items()).extracting(WatchlistRes.Item::stockCode).containsExactly("005930");
+			// 행은 지우지 않는다 — 마스터에 다시 나타나면(applyMaster) 목록에도 한도에도 돌아온다.
+			dead.applyMaster("폐지예정종목", com.finch.domain.stock.entity.Market.KOSPI, false, null, 1_000L,
+				Instant.now());
+			stockRepository.saveAndFlush(dead);
+			assertThat(watchlistService.list(userId, WatchlistSort.REGISTERED).count()).isEqualTo(2);
+		}
+
 		@Test
 		@DisplayName("담은 적이 없으면 빈 목록이고 count 는 0, maxCount 는 50 이다")
 		void emptyList() {
