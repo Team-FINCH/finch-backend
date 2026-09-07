@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.finch.domain.stock.dto.request.CandlePeriod;
 import com.finch.domain.stock.dto.response.CandleRes;
 import com.finch.domain.stock.dto.response.StockDetailRes;
+import com.finch.domain.stock.dto.response.StockPriceRes;
 import com.finch.domain.stock.dto.response.StockSearchRes;
 import com.finch.domain.stock.entity.Market;
 import com.finch.domain.stock.exception.StockErrorCode;
@@ -189,6 +190,56 @@ class StockControllerTest {
 			given(stockService.detail(42L, "999999")).willThrow(new CustomException(StockErrorCode.STOCK_NOT_FOUND));
 
 			mockMvc.perform(authed(get("/api/v1/stocks/999999")))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("STOCK_NOT_FOUND"));
+		}
+	}
+
+	@Nested
+	@DisplayName("GET /stocks/{stockCode}/price")
+	class Price {
+
+		/** 단건은 stock 이 소유한다 — 없는 종목에 404 를 내야 하고 그 판정은 stock 만 할 수 있다 (다건은 price 도메인). */
+		@Test
+		@DisplayName("응답은 stockCode · 시세 셋 · asOf(KST) · stale 이다")
+		void returnsContractedBody() throws Exception {
+			givenLoggedIn(42L);
+			given(stockService.price("005930")).willReturn(new StockPriceRes("005930", 73_500L, -900L,
+				new BigDecimal("-1.21"), OffsetDateTime.parse("2026-08-20T14:30:00+09:00"), false));
+
+			mockMvc.perform(authed(get("/api/v1/stocks/005930/price")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.stockCode").value("005930"))
+				.andExpect(jsonPath("$.currentPrice").value(73500))
+				.andExpect(jsonPath("$.changeAmount").value(-900))
+				.andExpect(jsonPath("$.changeRate").value(-1.21))
+				.andExpect(jsonPath("$.asOf").value("2026-08-20T14:30:00+09:00"))
+				.andExpect(jsonPath("$.stale").value(false));
+		}
+
+		@Test
+		@DisplayName("값 없음은 시세 넷이 null 이고 stale 은 true 다 — 키는 유지된다")
+		void missingPriceKeepsKeys() throws Exception {
+			givenLoggedIn(42L);
+			given(stockService.price("005930"))
+				.willReturn(new StockPriceRes("005930", null, null, null, null, true));
+
+			mockMvc.perform(authed(get("/api/v1/stocks/005930/price")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.currentPrice").value(nullValue()))
+				.andExpect(jsonPath("$.changeAmount").value(nullValue()))
+				.andExpect(jsonPath("$.changeRate").value(nullValue()))
+				.andExpect(jsonPath("$.asOf").value(nullValue()))
+				.andExpect(jsonPath("$.stale").value(true));
+		}
+
+		@Test
+		@DisplayName("없는 종목은 404 STOCK_NOT_FOUND — 시세가 없는 것과 다른 상태다")
+		void notFound() throws Exception {
+			givenLoggedIn(42L);
+			given(stockService.price("999999")).willThrow(new CustomException(StockErrorCode.STOCK_NOT_FOUND));
+
+			mockMvc.perform(authed(get("/api/v1/stocks/999999/price")))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.code").value("STOCK_NOT_FOUND"));
 		}
