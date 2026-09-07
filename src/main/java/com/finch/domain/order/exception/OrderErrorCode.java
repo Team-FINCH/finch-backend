@@ -19,8 +19,11 @@ public enum OrderErrorCode implements BaseErrorCode {
 	ORDER_MARKET_CLOSED(HttpStatus.CONFLICT, "지금은 주문할 수 없어요 (거래 시간 09:00~15:30)"),
 	/** detail 에 거래정지 사유를 싣는다 (apiSpec 7.2). */
 	ORDER_STOCK_SUSPENDED(HttpStatus.CONFLICT, "거래정지 종목은 주문할 수 없어요"),
-	ORDER_PRICE_CHANGED(HttpStatus.CONFLICT, "가격이 변동되어 주문할 수 없어요. 다시 시도해 주세요"),
-	/** detail 에 {required, available} 을 싣는다 (apiSpec 1.3 예시). */
+	/**
+	 * detail 에 {required, available} 을 싣는다 (apiSpec 1.3 예시). 체결 직전 재검증(7.2 4단계)에서 예수금이 부족하면
+	 * <b>전부</b> 이 코드다 — "가격이 변동돼 부족해진 것"을 가르던 {@code ORDER_PRICE_CHANGED} 는 v0.8 에서 폐기됐다.
+	 * 요청 본문에 확인 화면의 기준가가 없어 서버가 둘을 구분할 수 없고, 사용자가 할 일도 같다 (apiSpec §13, 이슈 #33).
+	 */
 	ORDER_INSUFFICIENT_CASH(HttpStatus.CONFLICT, "예수금이 부족합니다"),
 	ORDER_INSUFFICIENT_QUANTITY(HttpStatus.CONFLICT, "보유 수량이 부족합니다"),
 	ORDER_PRICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "시세를 불러올 수 없어 주문이 제한됩니다");

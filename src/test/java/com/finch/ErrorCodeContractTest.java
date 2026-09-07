@@ -84,7 +84,6 @@ class ErrorCodeContractTest {
 		Map.entry("ORDER_QUANTITY_INVALID", HttpStatus.BAD_REQUEST),
 		Map.entry("ORDER_MARKET_CLOSED", HttpStatus.CONFLICT),
 		Map.entry("ORDER_STOCK_SUSPENDED", HttpStatus.CONFLICT),
-		Map.entry("ORDER_PRICE_CHANGED", HttpStatus.CONFLICT),
 		Map.entry("ORDER_INSUFFICIENT_CASH", HttpStatus.CONFLICT),
 		Map.entry("ORDER_INSUFFICIENT_QUANTITY", HttpStatus.CONFLICT),
 		Map.entry("ORDER_PRICE_UNAVAILABLE", HttpStatus.SERVICE_UNAVAILABLE)
