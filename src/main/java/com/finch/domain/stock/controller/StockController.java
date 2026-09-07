@@ -1,0 +1,57 @@
+package com.finch.domain.stock.controller;
+
+import com.finch.domain.stock.dto.request.CandlePeriod;
+import com.finch.domain.stock.dto.response.CandleRes;
+import com.finch.domain.stock.dto.response.StockDetailRes;
+import com.finch.domain.stock.dto.response.StockSearchRes;
+import com.finch.domain.stock.service.StockService;
+import com.finch.global.security.LoginUser;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * 종목 API (apiSpec §5.1~§5.3). 셋 다 인증이 필요하다 — 검색도 사용자를 알아야 최근 검색어를 기록한다.
+ * <p>
+ * 파라미터 검증은 공통 계층이 {@code INVALID_REQUEST} 로 답한다 (apiSpec 11.1·11.2): {@code keyword} 2글자 미만·{@code size} 1~10 밖은
+ * 제약 위반, {@code period} 열거값 밖은 {@link CandlePeriod#from}. 이 세 엔드포인트의 고유 코드는 {@code STOCK_NOT_FOUND} 뿐이다.
+ * <p>
+ * {@code /stocks/search} 는 {@code /stocks/{stockCode}} 보다 구체적인 경로라 먼저 매칭된다. S6 의 {@code /stocks/recent}·
+ * {@code /stocks/search/recent}, S7 의 {@code /stocks/prices} 도 같은 이유로 충돌하지 않는다.
+ */
+@RestController
+@RequestMapping("/api/v1/stocks")
+@RequiredArgsConstructor
+public class StockController {
+
+	private static final int SEARCH_DEFAULT_SIZE = 10;
+	private static final int SEARCH_MAX_SIZE = 10;
+
+	private final StockService stockService;
+
+	/** 자동완성 (featureSpec 4장 — 2글자 이상, 최대 10건). {@code size} 는 선택이고 기본 10 이다. */
+	@GetMapping("/search")
+	public StockSearchRes search(@LoginUser long userId,
+		@RequestParam @Size(min = 2, message = "2글자 이상 입력해 주세요") String keyword,
+		@RequestParam(required = false) @Min(1) @Max(SEARCH_MAX_SIZE) Integer size) {
+		return stockService.search(userId, keyword, size == null ? SEARCH_DEFAULT_SIZE : size);
+	}
+
+	/** 상세. 이 호출이 곧 "최근 본 종목" 기록이다 (apiSpec 5.2). */
+	@GetMapping("/{stockCode}")
+	public StockDetailRes detail(@LoginUser long userId, @PathVariable String stockCode) {
+		return stockService.detail(userId, stockCode);
+	}
+
+	/** 캔들. {@code period} 기본 {@code 1M}. 문자열로 받아 {@link CandlePeriod#from} 이 읽는다 — {@code 1M} 은 enum 이름이 될 수 없다. */
+	@GetMapping("/{stockCode}/candles")
+	public CandleRes candles(@PathVariable String stockCode, @RequestParam(defaultValue = "1M") String period) {
+		return stockService.candles(stockCode, CandlePeriod.from(period));
+	}
+}
