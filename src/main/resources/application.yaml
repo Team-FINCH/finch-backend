@@ -123,6 +123,22 @@ finch:
       # 응답 대기 제한. 사용자가 결제창 URL 을 기다리고 있는 호출이라 길게 잡을 이유가 없다.
       timeout: 10s
 
+  stock:
+    master:
+      # kis: KIS 종목 마스터 파일(kospi_code.mst.zip·kosdaq_code.mst.zip)을 내려받아 적재한다. 무인증 정적 파일이라
+      #      앱키가 필요 없다 (KIS 실공급자 S10 과 무관). 다운로드·파싱이 실패하면 WARN 을 남기고 csv 로 폴백한다.
+      # csv: resources/stock/seed.csv (상위 300 종목) 만 쓴다. 테스트·오프라인용이고 테스트 설정이 이 값으로 덮는다.
+      source: kis
+      base-url: https://new.real.download.dws.co.kr/common/master
+      timeout: 30s
+      # 기동 시 stock 테이블이 비어 있으면 1회 적재. 비어 있지 않으면 아래 스케줄에 맡긴다.
+      sync-on-startup: true
+      # 매일 07:00 KST — 장 시작 전이고 전일 상장·폐지가 마스터에 반영된 뒤다. 두 인스턴스가 같이 돌아도 같은 UPSERT 라 리더 락이 없다.
+      cron: "0 0 7 * * *"
+    # daily_candle 이 비어 있으면 resources/stock/candles-seed.csv (5종목 250 영업일, 실제 시세가 아닌 랜덤워크) 를 넣는다.
+    # 프론트가 차트를 바로 그리게 하는 시연용이다. S10 일봉 배치가 실데이터를 채우면 false 로 내린다.
+    seed-on-empty: true
+
   market:
     # 평일 09:00~15:30(KST) 밖에서도 장이 열린 것으로 본다. 시연·테스트 전용이라 운영은 false 다.
     # 발표(9/28)는 장 마감 뒤일 수 있고, 그때 주문이 전부 ORDER_MARKET_CLOSED 로 막히면 데모가 성립하지 않는다.
