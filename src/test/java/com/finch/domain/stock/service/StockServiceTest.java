@@ -307,13 +307,13 @@ class StockServiceTest {
 		@Test
 		@DisplayName("활성 종목은 exists, 없는 종목은 missing, 거래정지는 사유와 함께")
 		void tradability() {
-			assertThat(stockService.getTradable("005930")).isEqualTo(new TradabilityRes(true, false, null));
+			assertThat(stockService.getTradable("005930")).isEqualTo(new TradabilityRes(true, "삼성전자", false, null));
 			assertThat(stockService.getTradable("999999")).isEqualTo(TradabilityRes.missing());
 
 			String code = "ZZ9903";
 			transactionTemplate.executeWithoutResult(s -> stockRepository.save(
 				Stock.of(code, "정지종목", Market.KOSPI, true, "거래정지", 1_000L, Instant.now())));
-			assertThat(stockService.getTradable(code)).isEqualTo(new TradabilityRes(true, true, "거래정지"));
+			assertThat(stockService.getTradable(code)).isEqualTo(new TradabilityRes(true, "정지종목", true, "거래정지"));
 		}
 	}
 }

@@ -1,7 +1,9 @@
 package com.finch.domain.order.service;
 
 import com.finch.domain.account.service.AccountService;
+import com.finch.domain.order.dto.request.OrderReq;
 import com.finch.domain.order.dto.response.OrderAvailableRes;
+import com.finch.domain.order.dto.response.OrderRes;
 import com.finch.domain.order.entity.OrderSide;
 import com.finch.domain.order.service.OrderValidator.Rejection;
 import com.finch.domain.stock.dto.response.TradabilityRes;
@@ -27,11 +29,38 @@ import org.springframework.stereotype.Service;
 public class OrderService {
 
 	private final OrderValidator validator;
+	private final OrderExecutor executor;
 	private final StockService stockService;
 	private final MarketClock marketClock;
 	private final PriceQueryPort priceQueryPort;
 	private final HoldingQueryPort holdingQueryPort;
 	private final AccountService accountService;
+
+	/**
+	 * 시장가 주문 (apiSpec 7.1·7.2). 판정 순서는 apiSpec 11.2 그대로다 — (멱등성은 필터가 앞에서) → {@code side} 열거값(파싱) →
+	 * 수량 0 이하 → 종목 존재 → 거래정지 → 장 시간 → 시세 → <b>트랜잭션 진입</b> → 잠근 잔고·보유 재검증 → 기록.
+	 * <p>
+	 * <b>시세는 여기서 1회 읽고 그 값으로 체결한다.</b> 트랜잭션 밖이다. 이유는 {@link OrderExecutor} 주석 — 락을 잡은 채 Redis 를
+	 * 기다리지 않는다. 읽은 값이 {@code stale} 이면 체결하지 않는다 ({@link OrderValidator#rejectionBeforeExecution}).
+	 * <p>
+	 * <b>재전송은 {@code IdempotencyFilter} 가 막는다.</b> {@code finch.idempotency.paths} 에 이 경로가 있어 같은 키는 컨트롤러에
+	 * 닿지 않고 최초 응답이 재생된다. 서비스는 재생 경로를 갖지 않는다 — 출금과 같다.
+	 */
+	public OrderRes place(Long userId, OrderReq request) {
+		validator.requirePositiveQuantity(request.quantity());
+		TradabilityRes stock = stockService.getTradable(request.stockCode());
+		validator.requireExists(stock);
+
+		PriceSnapshot price = priceQueryPort.latest(request.stockCode());
+		validator.rejectionBeforeExecution(stock, marketClock.isOpen(), price)
+			.ifPresent(rejection -> {
+				throw rejection.toException();
+			});
+
+		OrderExecutor.Execution execution = executor.execute(userId, request.stockCode(), request.side(),
+			request.quantity(), price.currentPrice());
+		return OrderRes.of(execution.trade(), stock.stockName(), execution.cashBalanceAfter());
+	}
 
 	/**
 	 * 주문 가능 정보 (apiSpec 7.3). 판정은 주문과 <b>같은 순서, 같은 판정기</b>를 지난다 — 화면이 "가능" 이라 했는데 주문이 다른

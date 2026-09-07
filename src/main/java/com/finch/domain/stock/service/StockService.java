@@ -110,7 +110,7 @@ public class StockService {
 	@Transactional(readOnly = true)
 	public TradabilityRes getTradable(String stockCode) {
 		return stockRepository.findByStockCodeAndIsActiveTrue(stockCode)
-			.map(s -> new TradabilityRes(true, s.isSuspended(), s.getSuspendedReason()))
+			.map(s -> new TradabilityRes(true, s.getStockName(), s.isSuspended(), s.getSuspendedReason()))
 			.orElseGet(TradabilityRes::missing);
 	}
 

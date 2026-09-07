@@ -175,10 +175,28 @@ public class AccountService {
 	 * 우회할 수 있고, 불변식 2(누적 충전액 = SUM(deposit.amount))도 깨진다. 그래서 금액 인자가 없다 — 이 메서드가
 	 * 받는 것은 "기록 직후 잔고" 하나이고, 그 값은 이미 원장 행에 들어가 있다.
 	 * <p>
-	 * 매수(S9)도 잔고만 줄이므로 같은 메서드를 써도 되지만, 그건 그 스토리가 정한다.
+	 * 매수·매도(S9)도 잔고만 바꾸지만 {@link #applyTrade} 를 따로 둔다 — 이름이 곧 호출 자리의 문서다.
 	 */
 	@Transactional(propagation = Propagation.MANDATORY)
 	public void applyWithdrawal(Long accountId, long cashBalanceAfter) {
+		applyLockedBalance(accountId, cashBalanceAfter);
+	}
+
+	/**
+	 * 체결을 계좌 스냅샷에 반영한다. <b>주문 트랜잭션에서 원장·체결·보유를 쓴 직후에만</b> 부른다 (erd.md §3.2 의 마지막 줄).
+	 * <p>
+	 * {@link #applyWithdrawal} 과 몸이 같다 — 매수는 잔고가 줄고 매도는 늘지만 둘 다 "원장이 정한 기록 직후 잔고를 복사" 하는
+	 * 것이라 방향을 여기서 알 필요가 없다. 그래도 메서드를 나눈 이유는 {@code OrderExecutor} 를 읽는 사람이
+	 * "왜 체결이 출금을 부르나" 를 묻지 않게 하려는 것이다. {@code totalDepositedAmount} 는 건드리지 않는다 (충전만 더한다).
+	 * 전제도 같다 — {@code MANDATORY}, 호출 전에 {@link #lockByUserId} 로 같은 행을 잠갔어야 한다.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	public void applyTrade(Long accountId, long cashBalanceAfter) {
+		applyLockedBalance(accountId, cashBalanceAfter);
+	}
+
+	/** 잠근 행의 잔고를 원장 값으로 덮는다. 잠갔다면 {@code findById} 는 영속성 컨텍스트의 그 객체를 돌려주고 SQL 을 내지 않는다. */
+	private void applyLockedBalance(Long accountId, long cashBalanceAfter) {
 		Account account = accountRepository.findById(accountId)
 			.orElseThrow(() -> new IllegalStateException("잠근 계좌가 사라졌다. accountId=" + accountId));
 		account.applyBalance(cashBalanceAfter);
