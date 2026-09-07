@@ -19,6 +19,9 @@ public interface StockRepository extends JpaRepository<Stock, String> {
 	 * <p>
 	 * 정렬: 코드 접두 일치 → 이름 접두 일치 → 나머지, 그 안에서 이름순. 자동완성이라 "삼성" 을 치면 "삼성전자" 가 "호텔삼성" 보다
 	 * 위여야 한다. {@code LIMIT} 은 호출자가 검증한 1~10 이다.
+	 * <p>
+	 * 이름순에 {@code COLLATE "ko-KR-x-icu"} 를 쓰는 이유는 {@code WatchlistItemRepository.findRowsByName} 주석에 있다 —
+	 * DB 기본 콜레이션({@code en_US.utf8})은 한글을 가나다순으로 세우지 않는다. S6 에서 관심 종목 이름순을 만들다 발견해 같이 고쳤다.
 	 */
 	@Query(nativeQuery = true, value = """
 		SELECT s.*
@@ -28,7 +31,7 @@ public interface StockRepository extends JpaRepository<Stock, String> {
 		 ORDER BY CASE WHEN s.stock_code LIKE :keyword || '%' THEN 0
 		               WHEN s.stock_name ILIKE :keyword || '%' THEN 1
 		               ELSE 2 END,
-		          s.stock_name
+		          s.stock_name COLLATE "ko-KR-x-icu"
 		 LIMIT :size
 		""")
 	List<Stock> searchByKeyword(String keyword, int size);

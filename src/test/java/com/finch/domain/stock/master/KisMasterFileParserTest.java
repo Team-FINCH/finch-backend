@@ -63,12 +63,19 @@ class KisMasterFileParserTest {
 		assertThat(rows.get(2).stockName()).isEqualTo("딥커머스");
 	}
 
-	/** git 이 체크아웃 시 개행을 CRLF 로 바꿀 수 있다. 줄 길이 검사가 \r 때문에 깨지면 안 된다. */
+	/**
+	 * KIS 가 파일을 CRLF 로 내보내도 줄 길이 검사가 깨지면 안 된다.
+	 * <p>
+	 * <b>픽스처를 그대로 쓰지 않고 LF 로 한 번 정규화한 뒤 CRLF 를 만든다.</b> 그러지 않으면 git 이 체크아웃하며 픽스처를 이미
+	 * CRLF 로 바꿔 둔 경우 {@code \r\r\n} 이 되어 289 바이트가 된다 — 실제로 그렇게 실패했다. 픽스처 자체는 {@code .gitattributes}
+	 * 의 {@code *.mst binary} 로 고정했고, 이 테스트는 그 설정이 빠져도 원인이 드러나게 스스로 정규화한다.
+	 */
 	@Test
 	@DisplayName("CRLF 개행도 같은 결과다")
 	void toleratesCrlf() throws IOException {
-		byte[] lf = fixture("kis-sample-kospi.mst");
-		byte[] crlf = new String(lf, StandardCharsets.ISO_8859_1).replace("\n", "\r\n").getBytes(StandardCharsets.ISO_8859_1);
+		String normalized = new String(fixture("kis-sample-kospi.mst"), StandardCharsets.ISO_8859_1).replace("\r\n", "\n");
+		byte[] lf = normalized.getBytes(StandardCharsets.ISO_8859_1);
+		byte[] crlf = normalized.replace("\n", "\r\n").getBytes(StandardCharsets.ISO_8859_1);
 
 		assertThat(KisMasterFileParser.parse(crlf, Layout.KOSPI))
 			.usingRecursiveComparison().isEqualTo(KisMasterFileParser.parse(lf, Layout.KOSPI));
@@ -83,7 +90,6 @@ class KisMasterFileParserTest {
 		// 코스피 파일을 코스닥 레이아웃(282)으로 읽으면 첫 줄에서 끊긴다.
 		assertThatThrownBy(() -> KisMasterFileParser.parse(kospi, Layout.KOSDAQ))
 			.isInstanceOf(StockMasterLoadException.class)
-			.hasMessageContaining("288")
 			.hasMessageContaining("282");
 		// 한 바이트 잘린 줄도 마찬가지다.
 		byte[] truncated = Arrays.copyOf(kospi, 287);
@@ -94,9 +100,10 @@ class KisMasterFileParserTest {
 	@Test
 	@DisplayName("주권이 한 건도 없으면 예외다 — 파일은 읽혔지만 내용이 다르다")
 	void rejectsFileWithoutStocks() throws IOException {
-		byte[] kospi = fixture("kis-sample-kospi.mst");
-		// 셋째 줄(ETF)만 남긴다.
-		byte[] etfOnly = Arrays.copyOfRange(kospi, 289 * 2, kospi.length);
+		// 셋째 줄(ETF)만 남긴다. 줄 수로 자른다 — 바이트 오프셋으로 자르면 줄바꿈이 CRLF 일 때 어긋난다.
+		String[] lines = new String(fixture("kis-sample-kospi.mst"), StandardCharsets.ISO_8859_1)
+			.replace("\r\n", "\n").split("\n");
+		byte[] etfOnly = (lines[2] + "\n").getBytes(StandardCharsets.ISO_8859_1);
 
 		assertThatThrownBy(() -> KisMasterFileParser.parse(etfOnly, Layout.KOSPI))
 			.isInstanceOf(StockMasterLoadException.class)

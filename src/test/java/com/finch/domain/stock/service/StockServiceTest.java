@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finch.TestcontainersConfiguration;
+import com.finch.domain.auth.entity.User;
+import com.finch.domain.auth.repository.UserRepository;
 import com.finch.domain.stock.dto.request.CandlePeriod;
 import com.finch.domain.stock.dto.response.CandleRes;
 import com.finch.domain.stock.dto.response.StockDetailRes;
@@ -23,6 +25,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -45,7 +49,14 @@ import org.springframework.transaction.support.TransactionTemplate;
 @RecordApplicationEvents
 class StockServiceTest {
 
-	private static final long USER = 42L;
+	private static final AtomicLong KAKAO_ID = new AtomicLong(980_000_000L);
+
+	/**
+	 * <b>실제로 존재하는 사용자여야 한다.</b> 상수 42 를 쓰다가 S6 에서 깨졌다 — 그때 recent 도메인이 검색·조회 이벤트를 받아
+	 * {@code recent_search_keyword} 에 INSERT 하기 시작했고, 없는 사용자라 FK 제약에 걸렸다. 이벤트에 소비자가 붙으면 발행 쪽
+	 * 테스트의 가짜 식별자가 드러난다.
+	 */
+	private long userId;
 
 	@Autowired
 	private StockService stockService;
@@ -64,6 +75,14 @@ class StockServiceTest {
 
 	@Autowired
 	private ApplicationEvents events;
+
+	@Autowired
+	private UserRepository userRepository;
+
+	@BeforeEach
+	void createUser() {
+		userId = userRepository.save(User.register(KAKAO_ID.incrementAndGet(), "홍길동", "https://img.kakao/1.jpg")).getId();
+	}
 
 	@Nested
 	@DisplayName("기동 적재")
@@ -97,7 +116,7 @@ class StockServiceTest {
 		@Test
 		@DisplayName("이름 부분 일치 — 시세는 기본 포트라 null 이고 검색 이벤트가 발행된다")
 		void searchesByNameFragment() {
-			StockSearchRes res = stockService.search(USER, "삼성", 10);
+			StockSearchRes res = stockService.search(userId, "삼성", 10);
 
 			assertThat(res.items()).isNotEmpty().hasSizeLessThanOrEqualTo(10);
 			assertThat(res.items()).allMatch(i -> i.stockName().contains("삼성"));
@@ -105,7 +124,7 @@ class StockServiceTest {
 			assertThat(res.items()).allMatch(i -> i.currentPrice() == null && i.changeAmount() == null && i.changeRate() == null);
 			assertThat(events.stream(StockSearchedEvent.class)).hasSize(1)
 				.first().satisfies(e -> {
-					assertThat(e.userId()).isEqualTo(USER);
+					assertThat(e.userId()).isEqualTo(userId);
 					assertThat(e.keyword()).isEqualTo("삼성");
 				});
 		}
@@ -113,7 +132,7 @@ class StockServiceTest {
 		@Test
 		@DisplayName("코드 접두 일치가 이름 일치보다 앞이다")
 		void codePrefixFirst() {
-			StockSearchRes res = stockService.search(USER, "0059", 10);
+			StockSearchRes res = stockService.search(userId, "0059", 10);
 
 			assertThat(res.items()).isNotEmpty();
 			assertThat(res.items().getFirst().stockCode()).startsWith("0059");
@@ -123,7 +142,7 @@ class StockServiceTest {
 		@Test
 		@DisplayName("이름 접두 일치가 중간 일치보다 앞이다 — 자동완성은 '삼성' 을 치면 '삼성전자' 가 위다")
 		void namePrefixBeforeInfix() {
-			StockSearchRes res = stockService.search(USER, "전자", 10);
+			StockSearchRes res = stockService.search(userId, "전자", 10);
 
 			List<String> names = res.items().stream().map(StockSearchRes.Item::stockName).toList();
 			int firstInfix = -1;
@@ -144,14 +163,14 @@ class StockServiceTest {
 		@Test
 		@DisplayName("size 만큼만 준다")
 		void limitsBySize() {
-			assertThat(stockService.search(USER, "삼성", 2).items()).hasSize(2);
+			assertThat(stockService.search(userId, "삼성", 2).items()).hasSize(2);
 		}
 
 		/** 컨트롤러의 @Size 는 공백을 세므로 " 삼" 을 통과시킨다. 서비스가 걷어낸 뒤 다시 본다. */
 		@Test
 		@DisplayName("공백을 걷어낸 검색어가 2글자 미만이면 INVALID_REQUEST 이고 이벤트는 없다")
 		void rejectsShortKeywordAfterTrim() {
-			assertThatThrownBy(() -> stockService.search(USER, " 삼 ", 10))
+			assertThatThrownBy(() -> stockService.search(userId, " 삼 ", 10))
 				.isInstanceOf(CustomException.class)
 				.satisfies(e -> {
 					CustomException ce = (CustomException) e;
@@ -167,20 +186,20 @@ class StockServiceTest {
 			String code = "ZZ9901";
 			transactionTemplate.executeWithoutResult(s -> stockRepository.save(
 				Stock.of(code, "테스트폐지전자", Market.KOSDAQ, false, null, 1_000L, Instant.now())));
-			assertThat(stockService.search(USER, "테스트폐지", 10).items()).extracting(StockSearchRes.Item::stockCode)
+			assertThat(stockService.search(userId, "테스트폐지", 10).items()).extracting(StockSearchRes.Item::stockCode)
 				.contains(code);
 
 			transactionTemplate.executeWithoutResult(s ->
 				stockRepository.findById(code).orElseThrow().deactivate(Instant.now()));
 
-			assertThat(stockService.search(USER, "테스트폐지", 10).items()).extracting(StockSearchRes.Item::stockCode)
+			assertThat(stockService.search(userId, "테스트폐지", 10).items()).extracting(StockSearchRes.Item::stockCode)
 				.doesNotContain(code);
 		}
 
 		@Test
 		@DisplayName("결과 없음은 빈 목록이다 — 에러가 아니다")
 		void emptyResult() {
-			assertThat(stockService.search(USER, "없는종목이름XYZ", 10).items()).isEmpty();
+			assertThat(stockService.search(userId, "없는종목이름XYZ", 10).items()).isEmpty();
 		}
 	}
 
@@ -191,7 +210,7 @@ class StockServiceTest {
 		@Test
 		@DisplayName("시드 종목 — holding null · watched false · 시세 null · asOf null, 조회 이벤트가 발행된다")
 		void returnsDetailWithEmptyPorts() {
-			StockDetailRes res = stockService.detail(USER, "005930");
+			StockDetailRes res = stockService.detail(userId, "005930");
 
 			assertThat(res.stockCode()).isEqualTo("005930");
 			assertThat(res.stockName()).isEqualTo("삼성전자");
@@ -207,7 +226,7 @@ class StockServiceTest {
 			assertThat(res.holding()).isNull();
 			assertThat(events.stream(StockViewedEvent.class)).hasSize(1)
 				.first().satisfies(e -> {
-					assertThat(e.userId()).isEqualTo(USER);
+					assertThat(e.userId()).isEqualTo(userId);
 					assertThat(e.stockCode()).isEqualTo("005930");
 					assertThat(e.viewedAt()).isNotNull();
 				});
@@ -216,7 +235,7 @@ class StockServiceTest {
 		@Test
 		@DisplayName("없는 코드는 STOCK_NOT_FOUND 이고 이벤트는 없다")
 		void notFound() {
-			assertThatThrownBy(() -> stockService.detail(USER, "999999"))
+			assertThatThrownBy(() -> stockService.detail(userId, "999999"))
 				.isInstanceOf(CustomException.class)
 				.extracting(e -> ((CustomException) e).getErrorCode())
 				.isEqualTo(StockErrorCode.STOCK_NOT_FOUND);
@@ -232,7 +251,7 @@ class StockServiceTest {
 				stock.deactivate(Instant.now());
 			});
 
-			assertThatThrownBy(() -> stockService.detail(USER, code)).isInstanceOf(CustomException.class);
+			assertThatThrownBy(() -> stockService.detail(userId, code)).isInstanceOf(CustomException.class);
 		}
 	}
 
