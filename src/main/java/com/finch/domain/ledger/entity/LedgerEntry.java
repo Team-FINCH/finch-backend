@@ -63,7 +63,7 @@ public class LedgerEntry {
 	@Column(nullable = false, length = 16, updatable = false)
 	private LedgerType type;
 
-	/** 예수금 증감. 매수는 음수, 나머지는 양수다 (erd.md §2.3). */
+	/** 예수금 증감. 매수·출금은 음수, 나머지는 양수다 (erd.md §2.3). */
 	@Column(nullable = false, updatable = false)
 	private long cashDelta;
 
