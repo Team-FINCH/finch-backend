@@ -1,6 +1,8 @@
 package com.finch.domain.stock.port;
 
+import java.util.Collection;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 보유 수량·평단을 묻는 창구. <b>{@code stock}(1층)이 선언하고 {@code portfolio}(3층, S8)가 구현한다.</b>
@@ -14,6 +16,16 @@ import java.util.Optional;
 public interface HoldingQueryPort {
 
 	Optional<HoldingSnapshot> holdingOf(Long userId, String stockCode);
+
+	/**
+	 * 이 중 어느 종목을 보유 중인가. 관심 종목 목록의 {@code held} 뱃지가 쓴다 (apiSpec 6.3).
+	 * <p>
+	 * 낱개 조회를 반복하지 않는 이유 — 관심 종목은 최대 50개다. {@link #holdingOf} 를 50번 부르면 S8 이 구현을 붙이는 순간 N+1 이 된다.
+	 * <b>{@code quantity = 0} 인 종목은 결과에 넣지 않는다</b> — {@link #holdingOf} 와 같은 계약이다.
+	 *
+	 * @return 보유 중인 종목코드만. 인자에 없던 코드는 담지 않는다.
+	 */
+	Set<String> heldCodesAmong(Long userId, Collection<String> stockCodes);
 
 	/**
 	 * @param quantity    보유 수량. 항상 1 이상이다.

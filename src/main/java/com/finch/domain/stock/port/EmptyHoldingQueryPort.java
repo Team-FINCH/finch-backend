@@ -1,6 +1,8 @@
 package com.finch.domain.stock.port;
 
+import java.util.Collection;
 import java.util.Optional;
+import java.util.Set;
 import org.springframework.stereotype.Component;
 
 /**
@@ -15,5 +17,10 @@ public class EmptyHoldingQueryPort implements HoldingQueryPort {
 	@Override
 	public Optional<HoldingSnapshot> holdingOf(Long userId, String stockCode) {
 		return Optional.empty();
+	}
+
+	@Override
+	public Set<String> heldCodesAmong(Long userId, Collection<String> stockCodes) {
+		return Set.of();
 	}
 }
