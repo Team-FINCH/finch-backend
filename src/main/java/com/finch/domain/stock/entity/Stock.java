@@ -95,6 +95,32 @@ public class Stock {
 		this.updatedAt = now;
 	}
 
+	/**
+	 * KIS 현재가 응답으로 기준가·거래정지를 맞춘다 ({@code PriceObservedListener}, S10). 마스터 동기화가 07:00 에 한 번 넣는 값을
+	 * 장중에는 이 경로가 따라잡는다. {@code previousClose} 는 값이 있을 때만 덮는다 ({@link #applyMaster} 와 같은 규칙).
+	 *
+	 * @return 무엇이든 바뀌었으면 true. false 면 호출자가 UPDATE 를 내지 않는다.
+	 */
+	public boolean applyQuote(Long previousClose, boolean suspended, String suspendedReason, Instant now) {
+		boolean changed = false;
+		if (previousClose != null && previousClose > 0 && !previousClose.equals(this.previousClose)) {
+			this.previousClose = previousClose;
+			changed = true;
+		}
+		if (this.suspended != suspended) {
+			this.suspended = suspended;
+			changed = true;
+		}
+		if (!java.util.Objects.equals(this.suspendedReason, suspendedReason)) {
+			this.suspendedReason = suspendedReason;
+			changed = true;
+		}
+		if (changed) {
+			this.updatedAt = now;
+		}
+		return changed;
+	}
+
 	/** 마스터 파일에서 사라진 종목. 상장폐지로 본다 (erd.md §2.7). */
 	public void deactivate(Instant now) {
 		this.isActive = false;
