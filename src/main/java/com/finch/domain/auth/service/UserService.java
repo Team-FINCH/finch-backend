@@ -36,4 +36,14 @@ public class UserService {
 			.map(UserMeRes::from)
 			.orElseThrow(() -> new CustomException(AuthErrorCode.AUTH_INVALID_TOKEN));
 	}
+
+	/**
+	 * 사용자가 있는가. AI 서버 내부 API(apiSpec 9장)가 {@code X-User-Id} 를 검사할 때 쓴다 — 그쪽은 토큰이 아니라 헤더로 사용자를
+	 * 받으므로 "없으면 다시 로그인" 이 성립하지 않고 {@code 404 RESOURCE_NOT_FOUND} 여야 한다 (apiSpec 11.2). 그래서 {@link #getMe}
+	 * 의 {@code AUTH_INVALID_TOKEN} 을 재사용하지 않고 존재 여부만 준다.
+	 */
+	@Transactional(readOnly = true)
+	public boolean exists(long userId) {
+		return userRepository.existsById(userId);
+	}
 }
