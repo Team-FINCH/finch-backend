@@ -194,6 +194,17 @@ finch:
     # 발표(9/28)는 장 마감 뒤일 수 있고, 그때 주문이 전부 ORDER_MARKET_CLOSED 로 막히면 데모가 성립하지 않는다.
     always-open: false
 
+  ai:
+    # AI 서버 (FastAPI). 배포는 compose 서비스 이름, 로컬은 uvicorn 기본 포트. 경로 접두사 /api/ai/v1 은 코드(AiRoute)가 붙인다.
+    base-url: ${FINCH_AI_BASE_URL:http://localhost:8000}
+    # 백엔드 → AI 방향의 X-Internal-Token. AI 쪽 BACKEND_SERVICE_TOKEN 과 같은 값이어야 한다. 비밀값이라 기본값이 없다.
+    internal-token: ${AI_INTERNAL_TOKEN}
+    # 응답 대기 제한. AI 의 LLM 타임아웃보다 길어야 AI 가 먼저 504 LLM_TIMEOUT 을 돌려준다 — 우리가 먼저 끊으면 프론트가
+    # AI_UPSTREAM_TIMEOUT 을 받아 재시도하고 호출량만 는다. 90초는 가정값이고 AI 파트 확인 후 조정한다 (backend_story §6).
+    timeout: 90s
+    # AI 가 429 에 Retry-After 를 주지 않았을 때 503 AI_UPSTREAM_RATE_LIMITED 에 싣는 기본값 (apiSpec 10.4, 최소 1초).
+    rate-limit-retry-after: 5s
+
   internal:
     # /internal/v1 (AI 서버 전용, apiSpec 9장) 의 X-Internal-Token 과 대조할 값. AI 쪽 BACKEND_SERVICE_TOKEN 과 같은 값이어야 한다.
     # 백엔드 → AI 방향(finch.ai.internal-token)과 별도 변수다 — 한쪽이 유출되면 한쪽만 바꾼다. 비밀값이라 기본값이 없다.

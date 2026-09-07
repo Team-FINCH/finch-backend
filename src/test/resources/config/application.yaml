@@ -24,6 +24,9 @@ finch:
       source: csv
     # 일봉 시드도 넣는다 — 캔들 API 테스트가 삼성전자 등 5종목의 봉을 전제한다.
     seed-on-empty: true
+  ai:
+    # 중계 테스트는 스텁 WebClient 를 쓰므로 주소는 닿지 않는다. 비밀값 필수 규칙 때문에 토큰 값만 둔다.
+    internal-token: test-only-ai-token
   internal:
     # /internal/v1 테스트가 이 값을 헤더로 보낸다. 실제 값과 무관하다.
     token: test-only-internal-token
