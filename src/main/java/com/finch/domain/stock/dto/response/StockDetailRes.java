@@ -5,8 +5,8 @@ import com.finch.domain.stock.entity.Stock;
 import com.finch.domain.stock.port.HoldingQueryPort.HoldingSnapshot;
 import com.finch.domain.stock.port.PriceQueryPort.PriceSnapshot;
 import com.finch.global.util.KstTime;
+import com.finch.global.util.Valuation;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 
@@ -39,22 +39,20 @@ public record StockDetailRes(
 	}
 
 	/**
-	 * 보유 요약 카드 (featureSpec 7.1). 평가손익 = (현재가 − 평단) × 수량, 수익률은 매입 원가 대비 둘째 자리 HALF_UP.
-	 * 현재가가 없으면(캐시 미스) 둘 다 null — 수량·평단은 시세와 무관하게 보여준다.
+	 * 보유 요약 카드 (featureSpec 7.1). 계산은 {@link Valuation} 이 한다 — 잔고 화면과 같은 식이어야 한 종목의 수익률이 두 화면에서
+	 * 다르게 보이지 않는다. <b>S8 이 여기 있던 식을 그쪽으로 옮겼다.</b>
+	 * <p>
+	 * 현재가가 없으면(캐시 미스) 평가 둘 다 null — 수량·평단은 시세와 무관하게 보여준다.
 	 */
 	public record Holding(long quantity, long avgBuyPrice, Long evaluationProfit, BigDecimal evaluationProfitRate) {
-
-		private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
 		public static Holding of(HoldingSnapshot snapshot, Long currentPrice) {
 			if (currentPrice == null) {
 				return new Holding(snapshot.quantity(), snapshot.avgBuyPrice(), null, null);
 			}
-			long profit = (currentPrice - snapshot.avgBuyPrice()) * snapshot.quantity();
-			long cost = snapshot.avgBuyPrice() * snapshot.quantity();
-			BigDecimal rate = cost == 0 ? null
-				: BigDecimal.valueOf(profit).multiply(HUNDRED).divide(BigDecimal.valueOf(cost), 2, RoundingMode.HALF_UP);
-			return new Holding(snapshot.quantity(), snapshot.avgBuyPrice(), profit, rate);
+			return new Holding(snapshot.quantity(), snapshot.avgBuyPrice(),
+				Valuation.evaluationProfit(snapshot.quantity(), snapshot.avgBuyPrice(), currentPrice),
+				Valuation.evaluationProfitRate(snapshot.quantity(), snapshot.avgBuyPrice(), currentPrice));
 		}
 	}
 }

@@ -155,7 +155,7 @@ class AccountServiceTest {
 		AccountRes summary = accountService.getSummary(userId);
 
 		assertThat(summary.cashBalance()).isZero();
-		// portfolio 가 붙기 전이라 기본 포트가 0 을 준다 (EmptyValuationPort).
+		// S8 부터는 실제 포트가 답한다. 갓 만든 계좌라 보유가 없어 여전히 0 이고, 그 0 은 이제 실제 조회 결과다.
 		assertThat(summary.evaluationAmount()).isZero();
 		assertThat(summary.totalAsset()).isZero();
 		// apiSpec 1.1 — 시각은 KST 오프셋을 포함한다. Z 로 나가면 프론트 표시가 9시간 밀린다.
