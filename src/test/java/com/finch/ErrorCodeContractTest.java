@@ -8,6 +8,7 @@ import com.finch.domain.deposit.exception.DepositErrorCode;
 import com.finch.domain.order.exception.OrderErrorCode;
 import com.finch.domain.stock.exception.StockErrorCode;
 import com.finch.domain.watchlist.exception.WatchlistErrorCode;
+import com.finch.domain.withdrawal.exception.WithdrawalErrorCode;
 import com.finch.global.apiPayload.code.BaseErrorCode;
 import com.finch.global.apiPayload.code.GeneralErrorCode;
 import java.util.ArrayList;
@@ -36,6 +37,7 @@ class ErrorCodeContractTest {
 		AuthErrorCode.values(),
 		AiErrorCode.values(),
 		DepositErrorCode.values(),
+		WithdrawalErrorCode.values(),
 		StockErrorCode.values(),
 		WatchlistErrorCode.values(),
 		OrderErrorCode.values()
@@ -71,6 +73,9 @@ class ErrorCodeContractTest {
 		Map.entry("DEPOSIT_PAYMENT_FAILED", HttpStatus.CONFLICT),
 		Map.entry("DEPOSIT_INVALID_STATE", HttpStatus.CONFLICT),
 		Map.entry("DEPOSIT_PG_UNAVAILABLE", HttpStatus.BAD_GATEWAY),
+		// 출금
+		Map.entry("WITHDRAWAL_AMOUNT_INVALID", HttpStatus.BAD_REQUEST),
+		Map.entry("WITHDRAWAL_INSUFFICIENT_CASH", HttpStatus.CONFLICT),
 		// 종목 · 관심 종목
 		Map.entry("STOCK_NOT_FOUND", HttpStatus.NOT_FOUND),
 		Map.entry("WATCHLIST_LIMIT_EXCEEDED", HttpStatus.CONFLICT),
@@ -128,6 +133,7 @@ class ErrorCodeContractTest {
 		assertPrefix(AuthErrorCode.values(), "AUTH_");
 		assertPrefix(AiErrorCode.values(), "AI_");
 		assertPrefix(DepositErrorCode.values(), "DEPOSIT_");
+		assertPrefix(WithdrawalErrorCode.values(), "WITHDRAWAL_");
 		assertPrefix(StockErrorCode.values(), "STOCK_");
 		assertPrefix(WatchlistErrorCode.values(), "WATCHLIST_");
 		assertPrefix(OrderErrorCode.values(), "ORDER_");

@@ -139,6 +139,8 @@ finch:
     #
     # 충전(/deposits/**)은 여기 없다. v0.8 에서 충전이 ready/confirm 2단계가 되면서 멱등 기준이 클라이언트 UUID 가
     # 아니라 PG 가 발급한 paymentKey 로 바뀌었다 (apiSpec 1.4). 여기 넣으면 ready 가 헤더 없음 400 으로 막힌다.
+    # 출금(/withdrawals)은 PG 가 없어 키를 발급할 주체가 없으므로 클라이언트 UUID 로 돌아간다 — WithdrawalService 의
+    # 재전송 방어는 이 한 줄이 전부다. 서비스는 재생 경로를 갖지 않는다.
     paths:
       - /api/v1/orders
       - /api/v1/withdrawals
