@@ -189,6 +189,12 @@ finch:
     # 발표(9/28)는 장 마감 뒤일 수 있고, 그때 주문이 전부 ORDER_MARKET_CLOSED 로 막히면 데모가 성립하지 않는다.
     always-open: false
 
+  leader-lock:
+    # replica 중 1대만 KIS 폴링·일봉 배치를 돌린다 (global/lock/LeaderLock). 리더가 죽으면 ttl 뒤에 다른 인스턴스가 이어받고,
+    # 살아 있는 리더는 renew-interval 마다 ttl 을 늘린다. renew-interval 은 ttl 보다 충분히 짧아야 한다.
+    ttl: 10s
+    renew-interval: 3s
+
   http:
     # 외부 API(카카오·KIS·AI) 연결까지의 제한. 응답 대기 시간은 호출하는 쪽이 각자 정한다 (FinchProperties.Http).
     connect-timeout: 3s

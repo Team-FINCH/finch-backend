@@ -18,7 +18,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * 붙이지 않으면 `finch.market` 한 줄이 빠졌을 때 바인딩이 null 을 넣고 첫 호출에서 NPE 가 난다.
  */
 @ConfigurationProperties("finch")
-public record FinchProperties(@DefaultValue Market market, @DefaultValue Http http) {
+public record FinchProperties(@DefaultValue Market market, @DefaultValue Http http,
+	@DefaultValue LeaderLock leaderLock) {
 
 	/**
 	 * 장 시간 판정 ({@code MarketClock}).
@@ -37,5 +38,14 @@ public record FinchProperties(@DefaultValue Market market, @DefaultValue Http ht
 	 *                       나머지도 같이 늘어난다. 연결 실패는 상대가 누구든 빨리 포기하는 것이 맞다.
 	 */
 	public record Http(@DefaultValue("3s") Duration connectTimeout) {
+	}
+
+	/**
+	 * 리더 락 ({@code global/lock/LeaderLock}). replica 중 1대만 KIS 폴링·일봉 배치를 돌린다.
+	 *
+	 * @param ttl           락의 수명. 리더가 죽으면 이 시간 뒤에 다른 인스턴스가 이어받는다.
+	 * @param renewInterval 리더가 락을 늘리는 주기. TTL 보다 충분히 짧아야 살아 있는 리더가 락을 놓치지 않는다.
+	 */
+	public record LeaderLock(@DefaultValue("10s") Duration ttl, @DefaultValue("3s") Duration renewInterval) {
 	}
 }
