@@ -107,6 +107,61 @@ class StockMasterSyncServiceTest {
 		assertThat(existing.isActive()).isTrue();
 	}
 
+	/**
+	 * 파싱이 성공한 채 일부만 읽히는 경우를 막는 가드다 (Jira 148). 줄 길이 불일치·주권 0건은 파서가 예외로 끊지만,
+	 * 그룹코드 의미가 바뀌어 절반만 잡히는 식이면 예외가 나지 않는다. 그때 나머지를 상장폐지로 내리면 검색이 통째로 죽는다.
+	 */
+	@Test
+	@DisplayName("사라진 종목이 활성 종목의 10% 를 넘으면 비활성화를 통째로 건너뛰고 아무 종목도 내리지 않는다")
+	void skipsDeactivationWhenTooManyMissing() {
+		List<Stock> active = activeStocks(200);
+		given(repository.findAll()).willReturn(active);
+		// 마스터가 2건만 돌려준다 — 198건이 사라진 것처럼 보인다.
+		givenKis(true, List.of(
+			new StockMasterRow("CODE000", "종목0", Market.KOSPI, false, null, 1_000L),
+			new StockMasterRow("CODE001", "종목1", Market.KOSPI, false, null, 1_000L)));
+
+		SyncResult result = service.sync();
+
+		assertThat(result.deactivationSkipped()).isTrue();
+		assertThat(result.deactivated()).isZero();
+		assertThat(active).allMatch(Stock::isActive);
+	}
+
+	/** 가드가 정상 폐지까지 막으면 안 된다. 200 종목에서 2건이 빠지는 것은 1% 라 그대로 내려간다. */
+	@Test
+	@DisplayName("정상적인 폐지 규모(10% 이하)는 그대로 비활성화한다")
+	void deactivatesNormalDelisting() {
+		List<Stock> active = activeStocks(200);
+		given(repository.findAll()).willReturn(active);
+		// 198건을 그대로 돌려준다 — 2건만 사라졌다.
+		givenKis(true, active.stream().limit(198)
+			.map(s -> new StockMasterRow(s.getStockCode(), s.getStockName(), Market.KOSPI, false, null, 1_000L))
+			.toList());
+
+		SyncResult result = service.sync();
+
+		assertThat(result.deactivationSkipped()).isFalse();
+		assertThat(result.deactivated()).isEqualTo(2);
+		assertThat(active.stream().filter(Stock::isActive)).hasSize(198);
+	}
+
+	/** 종목이 몇 개뿐인 환경에서 정상 폐지 한 건이 비율을 넘어 가드가 늘 켜지면 안 된다 — 최소 건수가 그것을 막는다. */
+	@Test
+	@DisplayName("종목이 적을 때 한 건이 사라져도 가드가 켜지지 않는다")
+	void smallDatasetIsNotGuarded() {
+		Stock kept = Stock.of("005930", "삼성전자", Market.KOSPI, false, null, 70_000L, T0);
+		Stock gone = Stock.of("999999", "사라진종목", Market.KOSDAQ, false, null, 1_000L, T0);
+		given(repository.findAll()).willReturn(List.of(kept, gone));
+		givenKis(true, List.of(new StockMasterRow("005930", "삼성전자", Market.KOSPI, false, null, 73_500L)));
+
+		SyncResult result = service.sync();
+
+		assertThat(result.deactivationSkipped()).isFalse();
+		assertThat(result.deactivated()).isEqualTo(1);
+		assertThat(gone.isActive()).isFalse();
+	}
+
 	@Test
 	@DisplayName("마스터가 기준가를 주지 않으면 기존 previous_close 를 지우지 않는다")
 	void keepsPreviousCloseWhenMasterHasNone() {
@@ -131,6 +186,15 @@ class StockMasterSyncServiceTest {
 		service.sync();
 
 		assertThat(delisted.isActive()).isTrue();
+	}
+
+	/** 활성 종목 n 개. 코드는 6자리 규칙과 무관하다 — 이 테스트는 파서를 거치지 않는다. */
+	private static List<Stock> activeStocks(int count) {
+		List<Stock> stocks = new ArrayList<>();
+		for (int i = 0; i < count; i++) {
+			stocks.add(Stock.of(String.format("CODE%03d", i), "종목" + i, Market.KOSPI, false, null, 1_000L, T0));
+		}
+		return stocks;
 	}
 
 	private void givenKis(boolean complete, List<StockMasterRow> rows) {

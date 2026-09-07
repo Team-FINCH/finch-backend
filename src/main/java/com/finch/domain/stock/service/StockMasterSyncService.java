@@ -37,6 +37,20 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class StockMasterSyncService {
 
+	/**
+	 * 사라진 종목이 기존 활성 종목의 이 비율을 넘으면 비활성화를 건너뛴다.
+	 * <p>
+	 * 활성 종목이 약 2,700 이고 정상적인 상장폐지는 하루 한두 건이다. 10% 면 270 건이라 평상시에는 걸리지 않고,
+	 * 걸렸다는 것 자체가 "마스터 파일이 평소와 다르다" 는 신호다.
+	 */
+	static final double MAX_DEACTIVATION_RATIO = 0.10;
+
+	/**
+	 * 비율과 함께 넘어야 하는 최소 건수. 이것이 없으면 종목이 몇 개뿐인 환경(테스트·초기 적재)에서 정상적인 폐지 한 건이
+	 * 비율을 넘어 버려 가드가 늘 켜진다. 가드는 <b>대량</b>을 막는 장치지 한 건을 막는 장치가 아니다.
+	 */
+	static final int MIN_DEACTIVATION_COUNT = 10;
+
 	private final ObjectProvider<KisMasterFileLoader> kisLoader;
 	private final CsvSeedLoader csvLoader;
 	private final StockRepository stockRepository;
@@ -49,10 +63,12 @@ public class StockMasterSyncService {
 	}
 
 	/**
-	 * @param source      실제로 쓴 출처.
-	 * @param deactivated 전 종목 출처에서 사라져 비활성화한 수. 일부 출처면 언제나 0.
+	 * @param source              실제로 쓴 출처.
+	 * @param deactivated         전 종목 출처에서 사라져 비활성화한 수. 일부 출처면 언제나 0.
+	 * @param deactivationSkipped 사라진 종목이 너무 많아 비활성화를 통째로 건너뛰었다. 로그와 테스트가 이 값으로 가드 작동을 본다.
 	 */
-	public record SyncResult(String source, int inserted, int updated, int deactivated, int total) {
+	public record SyncResult(String source, int inserted, int updated, int deactivated, int total,
+		boolean deactivationSkipped) {
 	}
 
 	@Scheduled(cron = "${finch.stock.master.cron:0 0 7 * * *}", zone = "Asia/Seoul")
@@ -102,17 +118,41 @@ public class StockMasterSyncService {
 		stockRepository.saveAll(toInsert);
 
 		int deactivated = 0;
+		boolean deactivationSkipped = false;
 		if (loaded.complete()) {
-			for (Stock stock : existing.values()) {
-				if (stock.isActive() && !seen.contains(stock.getStockCode())) {
-					stock.deactivate(now);
-					deactivated++;
-				}
+			List<Stock> missing = existing.values().stream()
+				.filter(stock -> stock.isActive() && !seen.contains(stock.getStockCode()))
+				.toList();
+			long activeCount = existing.values().stream().filter(Stock::isActive).count();
+			if (isSuspiciouslyMany(missing.size(), activeCount)) {
+				deactivationSkipped = true;
+				log.warn("상장폐지 후보가 {}/{} 로 비정상이다 — 비활성화를 통째로 건너뛴다. 마스터 파일 포맷이 바뀐 것을 의심한다."
+						+ " source={} 이번에 읽은 종목={}",
+					missing.size(), activeCount, loaded.source(), seen.size());
+			} else {
+				missing.forEach(stock -> stock.deactivate(now));
+				deactivated = missing.size();
 			}
 		}
-		SyncResult result = new SyncResult(loaded.source(), inserted, updated, deactivated, seen.size());
+		SyncResult result = new SyncResult(loaded.source(), inserted, updated, deactivated, seen.size(),
+			deactivationSkipped);
 		log.info("종목 마스터 동기화 {}", result);
 		return result;
+	}
+
+	/**
+	 * 이번에 사라진 종목이 "정상적인 상장폐지"로 보기에 너무 많은가.
+	 * <p>
+	 * <b>이 가드가 막는 것은 파싱이 성공한 채 일부만 읽히는 경우다.</b> 줄 길이가 다르거나 주권이 0건이면 파서가 예외를 던지고
+	 * CSV 시드로 폴백하지만(그 경우 {@code complete()} 가 false 라 비활성화를 하지 않는다), 그룹코드 의미가 바뀌어 절반만
+	 * 주권으로 잡히는 식이면 예외가 나지 않는다. 그때 나머지를 전부 상장폐지로 내리면 검색·상세·주문이 통째로 막힌다.
+	 * <p>
+	 * 새벽에 자동으로 도는 배치라 아무도 보지 않는다. 그래서 <b>의심스러우면 아무것도 하지 않는 쪽</b>을 고른다 — 폐지 반영이
+	 * 하루 늦는 것은 시연에 영향이 없지만, 종목이 사라지는 것은 서비스가 죽은 것처럼 보인다. 진짜 포맷 변경이면 다음 날 아침에도
+	 * 같은 WARN 이 떠서 로그에 남는다.
+	 */
+	private static boolean isSuspiciouslyMany(int missing, long activeCount) {
+		return missing > MIN_DEACTIVATION_COUNT && missing > activeCount * MAX_DEACTIVATION_RATIO;
 	}
 
 	private record Loaded(String source, boolean complete, List<StockMasterRow> rows) {
