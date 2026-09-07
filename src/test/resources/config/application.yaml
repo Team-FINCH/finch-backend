@@ -13,6 +13,11 @@ kakao:
   client-secret: test-client-secret
 
 finch:
+  price:
+    fake:
+      # 배경 스레드가 매초 캐시를 흔들면 stale 판정처럼 시각에 기대는 테스트가 불안정해진다.
+      # 테스트는 FakePriceFeed.tick() 을 직접 부른다.
+      auto-start: false
   stock:
     master:
       # 테스트는 네트워크를 타지 않는다. seed.csv 300 종목이 기동 시 적재되고 KisMasterFileLoader 빈은 만들어지지 않는다.
