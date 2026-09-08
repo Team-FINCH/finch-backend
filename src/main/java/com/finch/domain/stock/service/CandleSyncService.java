@@ -23,8 +23,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * 일봉을 바깥 원천({@link CandleSourcePort})에서 채운다. 두 경로다.
  * <ol>
- *   <li><b>lazy</b> ({@link #backfillIfEmpty}) — 캔들 API 가 불린 종목에 봉이 하나도 없으면 그 자리에서 1년치를 받아 넣는다.
- *       전 종목 1년 백필(2,700 × 3회 호출)은 하지 않는다 — 아무도 안 보는 종목의 봉을 미리 받을 이유가 없고 한도만 쓴다.</li>
+ *   <li><b>lazy</b> ({@link #backfillIfEmpty}) — 캔들 API 가 불린 종목에 봉이 하나도 없으면 그 자리에서
+ *       {@code backfill-days}(3년) 만큼 받아 넣는다. 전 종목 백필(2,700 × 8회 호출)은 하지 않는다 — 아무도 안 보는
+ *       종목의 봉을 미리 받을 이유가 없고 한도만 쓴다.</li>
  *   <li><b>배치</b> ({@link #refreshDaily}) — 16:00 KST, 봉이 있는 종목만 마지막 봉 다음 날부터 오늘까지 받아 더한다. 그 종목들의
  *       {@code stock.previous_close} 를 마지막 봉 종가로 맞춘다.</li>
  * </ol>
