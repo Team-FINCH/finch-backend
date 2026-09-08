@@ -1,5 +1,6 @@
 package com.finch.domain.stock.service;
 
+import com.finch.domain.stock.dto.request.CandleInterval;
 import com.finch.domain.stock.dto.request.CandlePeriod;
 import com.finch.domain.stock.dto.response.CandleRes;
 import com.finch.domain.stock.dto.response.StockDetailRes;
@@ -82,20 +83,23 @@ public class StockService {
 	}
 
 	/**
-	 * 캔들 (apiSpec 5.3). 오늘(KST)부터 {@code period.days()} 달력일 전까지의 일봉. 봉이 없으면 빈 배열 — 에러가 아니다.
-	 * 상장폐지 종목은 상세와 같은 이유로 404.
+	 * 캔들 (apiSpec 5.3). 오늘(KST)부터 {@code period.days()} 달력일 전까지를 읽어 {@code interval} 단위로 묶는다.
+	 * 봉이 없으면 빈 배열 — 에러가 아니다. 상장폐지 종목은 상세와 같은 이유로 404.
+	 * <p>
+	 * <b>읽는 것은 언제나 일봉이다.</b> 주봉·월봉은 {@link CandleAggregator} 가 그 자리에서 묶는다 — 저장은
+	 * {@code daily_candle} 하나이고 마이그레이션이 없다 (erd.md §2.8). 묶는 규칙은 그 클래스 주석에 있다.
 	 * <p>
 	 * <b>이 메서드에는 {@code @Transactional} 이 없다.</b> 봉이 없는 종목이면 {@link CandleSyncService#backfillIfEmpty} 가 KIS 를 부르는데
 	 * (S10 lazy 적재) 외부 HTTP 는 트랜잭션 밖이어야 한다. 읽기 둘은 각자 짧은 트랜잭션으로 충분하다 — 지연 로딩이 없다.
 	 */
-	public CandleRes candles(String stockCode, CandlePeriod period) {
+	public CandleRes candles(String stockCode, CandlePeriod period, CandleInterval interval) {
 		findActive(stockCode);
 		candleSyncService.backfillIfEmpty(stockCode);
 		LocalDate to = LocalDate.now(KstTime.ZONE);
 		LocalDate from = to.minusDays(period.days());
-		List<DailyCandle> candles = dailyCandleRepository.findByStockCodeAndTradeDateBetweenOrderByTradeDateAsc(stockCode, from,
+		List<DailyCandle> dailies = dailyCandleRepository.findByStockCodeAndTradeDateBetweenOrderByTradeDateAsc(stockCode, from,
 			to);
-		return CandleRes.of(stockCode, period, candles);
+		return CandleRes.of(stockCode, period, interval, CandleAggregator.aggregate(dailies, interval));
 	}
 
 	/**

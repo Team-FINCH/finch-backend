@@ -10,13 +10,15 @@ import java.util.Map;
  * 열거값 밖은 {@code INVALID_REQUEST} 이고 detail 은 {@code {period: 사유}} — 다른 enum 파라미터의 타입 불일치와 같은 모양이다
  * ({@code GlobalExceptionHandler.handleTypeMismatch}). 프론트가 두 경우를 구분할 이유가 없다.
  * <p>
- * 일봉만이다 ({@code interval=DAY}). 분봉은 S0-4 확장 범위.
+ * <b>봉의 크기는 {@link CandleInterval} 이 정한다.</b> 이쪽은 얼마나 거슬러 올라갈지만 정하고 둘은 독립이다.
+ * {@code 3Y} 는 월봉을 위해 있다 — 1년치로 묶으면 월봉이 12개뿐이라 차트가 성립하지 않는다. 분봉은 S0-4 확장 범위.
  */
 public enum CandlePeriod {
 
 	ONE_MONTH("1M", 30),
 	THREE_MONTHS("3M", 90),
-	ONE_YEAR("1Y", 365);
+	ONE_YEAR("1Y", 365),
+	THREE_YEARS("3Y", 1095);
 
 	private final String value;
 	private final int days;
