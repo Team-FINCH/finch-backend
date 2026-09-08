@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.finch.TestcontainersConfiguration;
 import com.finch.domain.auth.entity.User;
 import com.finch.domain.auth.repository.UserRepository;
+import com.finch.domain.stock.dto.request.CandleInterval;
 import com.finch.domain.stock.dto.request.CandlePeriod;
 import com.finch.domain.stock.dto.response.CandleRes;
 import com.finch.domain.stock.dto.response.StockDetailRes;
@@ -262,7 +263,7 @@ class StockServiceTest {
 		@Test
 		@DisplayName("1M 은 오늘(KST)부터 30 달력일 안의 일봉을 오래된 날부터 준다")
 		void oneMonthRange() {
-			CandleRes res = stockService.candles("005930", CandlePeriod.ONE_MONTH);
+			CandleRes res = stockService.candles("005930", CandlePeriod.ONE_MONTH, CandleInterval.DAY);
 
 			LocalDate today = LocalDate.now(KstTime.ZONE);
 			assertThat(res.stockCode()).isEqualTo("005930");
@@ -279,9 +280,9 @@ class StockServiceTest {
 		@Test
 		@DisplayName("기간이 길수록 봉이 많다 — 1M ≤ 3M ≤ 1Y, 1Y 는 시드 전부(250 영업일 근처)")
 		void longerPeriodHasMoreCandles() {
-			int m1 = stockService.candles("005930", CandlePeriod.ONE_MONTH).candles().size();
-			int m3 = stockService.candles("005930", CandlePeriod.THREE_MONTHS).candles().size();
-			int y1 = stockService.candles("005930", CandlePeriod.ONE_YEAR).candles().size();
+			int m1 = stockService.candles("005930", CandlePeriod.ONE_MONTH, CandleInterval.DAY).candles().size();
+			int m3 = stockService.candles("005930", CandlePeriod.THREE_MONTHS, CandleInterval.DAY).candles().size();
+			int y1 = stockService.candles("005930", CandlePeriod.ONE_YEAR, CandleInterval.DAY).candles().size();
 
 			assertThat(m1).isLessThanOrEqualTo(m3);
 			assertThat(m3).isLessThanOrEqualTo(y1);
@@ -292,11 +293,91 @@ class StockServiceTest {
 		@DisplayName("봉이 없는 종목은 빈 배열이고, 없는 종목은 STOCK_NOT_FOUND 다")
 		void emptyAndNotFound() {
 			// 시드에 있지만 일봉 시드 5종목이 아닌 것 — 두산(000150).
-			assertThat(stockService.candles("000150", CandlePeriod.ONE_YEAR).candles()).isEmpty();
-			assertThatThrownBy(() -> stockService.candles("999999", CandlePeriod.ONE_MONTH))
+			assertThat(stockService.candles("000150", CandlePeriod.ONE_YEAR, CandleInterval.DAY).candles()).isEmpty();
+			assertThatThrownBy(() -> stockService.candles("999999", CandlePeriod.ONE_MONTH, CandleInterval.DAY))
 				.isInstanceOf(CustomException.class)
 				.extracting(e -> ((CustomException) e).getErrorCode())
 				.isEqualTo(StockErrorCode.STOCK_NOT_FOUND);
+		}
+
+		@Test
+		@DisplayName("같은 구간을 WEEK·MONTH 로 묶으면 봉이 줄고 응답의 interval 이 따라간다")
+		void coarserIntervalHasFewerCandles() {
+			int day = stockService.candles("005930", CandlePeriod.ONE_YEAR, CandleInterval.DAY).candles().size();
+			CandleRes week = stockService.candles("005930", CandlePeriod.ONE_YEAR, CandleInterval.WEEK);
+			CandleRes month = stockService.candles("005930", CandlePeriod.ONE_YEAR, CandleInterval.MONTH);
+
+			assertThat(week.interval()).isEqualTo("WEEK");
+			assertThat(month.interval()).isEqualTo("MONTH");
+			assertThat(month.candles().size()).isLessThan(week.candles().size());
+			assertThat(week.candles().size()).isLessThan(day);
+			// 1년이면 주는 52~53 개, 달은 12~13 개다. 시드가 250 영업일이라 앞뒤 한 구간이 잘릴 수 있다.
+			assertThat(week.candles()).hasSizeBetween(50, 54);
+			assertThat(month.candles()).hasSizeBetween(11, 14);
+		}
+
+		@Test
+		@DisplayName("묶인 봉은 첫날 시가·마지막날 종가·구간 최대·최소·거래량 합이다")
+		void aggregationFollowsOhlcvRules() {
+			List<CandleRes.Candle> days = stockService.candles("005930", CandlePeriod.ONE_YEAR, CandleInterval.DAY)
+				.candles();
+			List<CandleRes.Candle> months = stockService.candles("005930", CandlePeriod.ONE_YEAR, CandleInterval.MONTH)
+				.candles();
+
+			// 가운데 달 하나를 골라 그 달에 속한 일봉과 직접 대조한다 — 첫·마지막 달은 잘려 있을 수 있다.
+			CandleRes.Candle target = months.get(months.size() / 2);
+			List<CandleRes.Candle> sameMonth = days.stream()
+				.filter(d -> d.date().getYear() == target.date().getYear()
+					&& d.date().getMonthValue() == target.date().getMonthValue())
+				.toList();
+
+			assertThat(sameMonth).isNotEmpty();
+			assertThat(target.date()).isEqualTo(sameMonth.getFirst().date());
+			assertThat(target.open()).isEqualTo(sameMonth.getFirst().open());
+			assertThat(target.close()).isEqualTo(sameMonth.getLast().close());
+			assertThat(target.high()).isEqualTo(sameMonth.stream().mapToLong(CandleRes.Candle::high).max().orElseThrow());
+			assertThat(target.low()).isEqualTo(sameMonth.stream().mapToLong(CandleRes.Candle::low).min().orElseThrow());
+			assertThat(target.volume()).isEqualTo(sameMonth.stream().mapToLong(CandleRes.Candle::volume).sum());
+		}
+
+		@Test
+		@DisplayName("주봉의 date 는 그 주 월요일이 아니라 구간의 첫 거래일이고, 거래 없는 주는 봉이 없다")
+		void weeklyDateIsFirstTradingDay() {
+			List<CandleRes.Candle> weeks = stockService.candles("005930", CandlePeriod.ONE_YEAR, CandleInterval.WEEK)
+				.candles();
+			List<CandleRes.Candle> days = stockService.candles("005930", CandlePeriod.ONE_YEAR, CandleInterval.DAY)
+				.candles();
+
+			assertThat(weeks).extracting(CandleRes.Candle::date).isSorted();
+			// 각 주봉의 date 는 실제로 존재하는 거래일이다 — 없는 날을 만들어 내지 않는다.
+			List<LocalDate> tradingDays = days.stream().map(CandleRes.Candle::date).toList();
+			assertThat(weeks).allMatch(w -> tradingDays.contains(w.date()));
+			// 그리고 그 주의 월요일 이후 7일 안에 있다.
+			assertThat(weeks).allMatch(w -> {
+				LocalDate monday = w.date().with(java.time.DayOfWeek.MONDAY);
+				return !w.date().isBefore(monday) && w.date().isBefore(monday.plusDays(7));
+			});
+			// 서로 다른 주는 서로 다른 봉이다.
+			assertThat(weeks.stream().map(w -> w.date().with(java.time.DayOfWeek.MONDAY)).distinct().count())
+				.isEqualTo(weeks.size());
+		}
+
+		@Test
+		@DisplayName("3Y 는 1Y 보다 짧지 않다 — 시드가 1년치라 같을 수 있다")
+		void threeYearsIsNotShorter() {
+			int y1 = stockService.candles("005930", CandlePeriod.ONE_YEAR, CandleInterval.DAY).candles().size();
+			int y3 = stockService.candles("005930", CandlePeriod.THREE_YEARS, CandleInterval.DAY).candles().size();
+
+			assertThat(y3).isGreaterThanOrEqualTo(y1);
+		}
+
+		@Test
+		@DisplayName("interval 기본값은 DAY 다 — 파라미터 없이 부르던 호출이 그대로 동작한다")
+		void intervalDefaultsToDay() {
+			CandleRes res = stockService.candles("005930", CandlePeriod.ONE_MONTH, CandleInterval.DAY);
+
+			assertThat(res.interval()).isEqualTo("DAY");
+			assertThat(res.period()).isEqualTo("1M");
 		}
 	}
 

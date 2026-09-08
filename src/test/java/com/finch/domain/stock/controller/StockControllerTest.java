@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.finch.domain.stock.dto.request.CandleInterval;
 import com.finch.domain.stock.dto.request.CandlePeriod;
 import com.finch.domain.stock.dto.response.CandleRes;
 import com.finch.domain.stock.dto.response.StockDetailRes;
@@ -250,11 +251,13 @@ class StockControllerTest {
 	class Candles {
 
 		@Test
-		@DisplayName("period 기본 1M · interval DAY · date 는 yyyy-MM-dd")
+		@DisplayName("파라미터가 없으면 period 1M · interval DAY 로 부른다 — 기존 호출이 그대로 동작한다")
 		void returnsContractedBody() throws Exception {
 			givenLoggedIn(42L);
-			given(stockService.candles("005930", CandlePeriod.ONE_MONTH)).willReturn(new CandleRes("005930", "1M", "DAY",
-				List.of(new CandleRes.Candle(LocalDate.parse("2026-08-20"), 74_000, 74_500, 73_100, 73_500, 12_345_678L))));
+			given(stockService.candles("005930", CandlePeriod.ONE_MONTH, CandleInterval.DAY))
+				.willReturn(new CandleRes("005930", "1M", "DAY",
+					List.of(new CandleRes.Candle(LocalDate.parse("2026-08-20"), 74_000, 74_500, 73_100, 73_500,
+						12_345_678L))));
 
 			mockMvc.perform(authed(get("/api/v1/stocks/005930/candles")))
 				.andExpect(status().isOk())
@@ -267,13 +270,14 @@ class StockControllerTest {
 		}
 
 		@Test
-		@DisplayName("period 는 1M · 3M · 1Y 만 — 밖이면 400 INVALID_REQUEST 이고 detail 에 period 가 있다")
+		@DisplayName("period 는 1M · 3M · 1Y · 3Y 만 — 밖이면 400 INVALID_REQUEST 이고 detail 에 period 가 있다")
 		void rejectsUnknownPeriod() throws Exception {
 			givenLoggedIn(42L);
-			given(stockService.candles(anyString(), any())).willReturn(new CandleRes("005930", "1Y", "DAY", List.of()));
+			given(stockService.candles(anyString(), any(), any()))
+				.willReturn(new CandleRes("005930", "3Y", "DAY", List.of()));
 
-			mockMvc.perform(authed(get("/api/v1/stocks/005930/candles").param("period", "1Y"))).andExpect(status().isOk());
-			verify(stockService).candles("005930", CandlePeriod.ONE_YEAR);
+			mockMvc.perform(authed(get("/api/v1/stocks/005930/candles").param("period", "3Y"))).andExpect(status().isOk());
+			verify(stockService).candles("005930", CandlePeriod.THREE_YEARS, CandleInterval.DAY);
 
 			mockMvc.perform(authed(get("/api/v1/stocks/005930/candles").param("period", "2W")))
 				.andExpect(status().isBadRequest())
@@ -282,10 +286,29 @@ class StockControllerTest {
 		}
 
 		@Test
+		@DisplayName("interval 은 DAY · WEEK · MONTH 만 — 밖이면 400 INVALID_REQUEST 이고 detail 에 interval 이 있다")
+		void rejectsUnknownInterval() throws Exception {
+			givenLoggedIn(42L);
+			given(stockService.candles(anyString(), any(), any()))
+				.willReturn(new CandleRes("005930", "1Y", "WEEK", List.of()));
+
+			mockMvc.perform(authed(get("/api/v1/stocks/005930/candles")
+					.param("period", "1Y").param("interval", "WEEK")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.interval").value("WEEK"));
+			verify(stockService).candles("005930", CandlePeriod.ONE_YEAR, CandleInterval.WEEK);
+
+			mockMvc.perform(authed(get("/api/v1/stocks/005930/candles").param("interval", "4H")))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+				.andExpect(jsonPath("$.detail.interval").exists());
+		}
+
+		@Test
 		@DisplayName("없는 종목은 404 STOCK_NOT_FOUND")
 		void notFound() throws Exception {
 			givenLoggedIn(42L);
-			given(stockService.candles("999999", CandlePeriod.ONE_MONTH))
+			given(stockService.candles("999999", CandlePeriod.ONE_MONTH, CandleInterval.DAY))
 				.willThrow(new CustomException(StockErrorCode.STOCK_NOT_FOUND));
 
 			mockMvc.perform(authed(get("/api/v1/stocks/999999/candles")))

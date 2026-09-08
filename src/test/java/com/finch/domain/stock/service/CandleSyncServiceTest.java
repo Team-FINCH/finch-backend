@@ -8,6 +8,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.finch.TestcontainersConfiguration;
+import com.finch.domain.stock.dto.request.CandleInterval;
 import com.finch.domain.stock.dto.request.CandlePeriod;
 import com.finch.domain.stock.dto.response.CandleRes;
 import com.finch.domain.stock.entity.DailyCandle;
@@ -58,8 +59,9 @@ class CandleSyncServiceTest {
 	@MockitoBean
 	private CandleSourcePort candleSource;
 
+	/** 받아 오는 기간은 {@code finch.stock.candle.backfill-days} 다. 월봉(period=3Y) 때문에 1년에서 3년으로 늘렸다 (이슈 #37). */
 	@Test
-	@DisplayName("봉이 없는 종목의 캔들 요청은 원천에서 1년치를 받아 넣고, 두 번째 요청은 원천을 부르지 않는다")
+	@DisplayName("봉이 없는 종목의 캔들 요청은 원천에서 3년치를 받아 넣고, 두 번째 요청은 원천을 부르지 않는다")
 	void lazyBackfillOnce() {
 		String code = newStock(10_000L);
 		LocalDate today = LocalDate.now(KstTime.ZONE);
@@ -67,12 +69,12 @@ class CandleSyncServiceTest {
 			new CandleData(today.minusDays(2), 100, 110, 90, 105, 7),
 			new CandleData(today.minusDays(1), 105, 115, 95, 108, 8)));
 
-		CandleRes first = stockService.candles(code, CandlePeriod.ONE_MONTH);
-		CandleRes second = stockService.candles(code, CandlePeriod.ONE_MONTH);
+		CandleRes first = stockService.candles(code, CandlePeriod.ONE_MONTH, CandleInterval.DAY);
+		CandleRes second = stockService.candles(code, CandlePeriod.ONE_MONTH, CandleInterval.DAY);
 
 		assertThat(first.candles()).hasSize(2);
 		assertThat(second.candles()).hasSize(2);
-		verify(candleSource, times(1)).dailyCandles(eq(code), eq(today.minusDays(365)), eq(today));
+		verify(candleSource, times(1)).dailyCandles(eq(code), eq(today.minusDays(1095)), eq(today));
 		// 마지막 봉 종가로 기준가를 맞춘다.
 		assertThat(stockRepository.findById(code).orElseThrow().getPreviousClose()).isEqualTo(108L);
 	}
@@ -83,7 +85,7 @@ class CandleSyncServiceTest {
 		String code = newStock(10_000L);
 		given(candleSource.dailyCandles(any(), any(), any())).willReturn(List.of());
 
-		assertThat(stockService.candles(code, CandlePeriod.ONE_MONTH).candles()).isEmpty();
+		assertThat(stockService.candles(code, CandlePeriod.ONE_MONTH, CandleInterval.DAY).candles()).isEmpty();
 		assertThat(candleSyncService.hasCandles(code)).isFalse();
 	}
 
@@ -93,7 +95,7 @@ class CandleSyncServiceTest {
 		String code = newStock(10_000L);
 		given(candleSource.dailyCandles(any(), any(), any())).willThrow(new IllegalStateException("KIS down"));
 
-		assertThat(stockService.candles(code, CandlePeriod.ONE_MONTH).candles()).isEmpty();
+		assertThat(stockService.candles(code, CandlePeriod.ONE_MONTH, CandleInterval.DAY).candles()).isEmpty();
 		verify(candleSource, times(1)).dailyCandles(eq(code), any(), any());
 	}
 
