@@ -4,8 +4,10 @@ import com.finch.domain.price.PriceProperties;
 import com.finch.domain.price.cache.InterestRegistry;
 import com.finch.domain.price.cache.PriceCache;
 import com.finch.domain.price.cache.PriceEntry;
+import com.finch.global.util.KstTime;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -66,6 +68,11 @@ public class FakePriceFeed implements PriceFeed, SmartLifecycle {
 	 * 관심 종목 한 바퀴. 관심이 없으면 아무 일도 하지 않는다 — 전 종목을 매초 흔들 이유가 없고, 그러면 캐시가 3천 개로 불어난다.
 	 * <p>
 	 * 처음 보는 종목은 {@code base-price} 그대로 넣는다. 기준가도 같은 값이라 <b>첫 응답의 등락은 0</b> 이다. 두 번째 틱부터 움직인다.
+	 * <p>
+	 * <b>당일 봉을 함께 누적한다</b> ({@code PriceEntry.session*}). KIS 는 현재가 응답에 시가·고가·저가가 실려 오지만 여기는
+	 * 만들어 낼 근거가 없으므로 <b>그날 처음 본 값을 시가로 삼고</b> 이후 최대·최소를 갱신한다. 거래량은 0 이다 — 없는 것을
+	 * 지어내면 화면에 그럴듯한 거짓 숫자가 뜬다. 날짜(KST)가 바뀌면 새 세션으로 다시 시작한다 — 캐시 키에 만료가 없어
+	 * 값이 자정을 넘겨 남는다.
 	 */
 	@Override
 	public int tick() {
@@ -74,13 +81,20 @@ public class FakePriceFeed implements PriceFeed, SmartLifecycle {
 			return 0;
 		}
 		Instant now = Instant.now(clock);
+		LocalDate today = LocalDate.ofInstant(now, KstTime.ZONE);
 		for (String code : codes) {
 			PriceEntry previous = priceCache.get(code).orElse(null);
 			if (previous == null) {
 				long base = properties.fake().basePrice();
-				priceCache.put(code, new PriceEntry(base, base, now));
+				priceCache.put(code, new PriceEntry(base, base, now, today, base, base, base, 0L));
 			} else {
-				priceCache.put(code, new PriceEntry(walk(previous.currentPrice()), previous.previousClose(), now));
+				long price = walk(previous.currentPrice());
+				boolean sameSession = today.equals(previous.sessionDate());
+				long open = sameSession && previous.sessionOpen() != null ? previous.sessionOpen() : price;
+				long high = sameSession && previous.sessionHigh() != null ? Math.max(previous.sessionHigh(), price) : price;
+				long low = sameSession && previous.sessionLow() != null ? Math.min(previous.sessionLow(), price) : price;
+				priceCache.put(code,
+					new PriceEntry(price, previous.previousClose(), now, today, open, high, low, 0L));
 			}
 		}
 		return codes.size();

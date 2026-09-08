@@ -12,6 +12,7 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -59,6 +60,23 @@ public class PriceQueryService implements PriceQueryPort {
 	public PriceSnapshot latest(String stockCode) {
 		interestRegistry.touch(List.of(stockCode));
 		return toSnapshot(priceCache.get(stockCode).orElse(null));
+	}
+
+	/**
+	 * 진행 중인 당일 봉 (apiSpec 5.3). 캐시에 시가·고가·저가가 다 있을 때만 준다.
+	 * <p>
+	 * <b>관심 신호를 남기지 않는다.</b> 차트는 한 번 그리고 마는 화면이라 그 종목을 순회 대상으로 붙잡아 둘 이유가 없다.
+	 * 현재가를 함께 보고 있으면 {@link #latest} 가 이미 신호를 남긴다.
+	 * <p>
+	 * {@code stale} 을 보지 않는다 — 수신이 끊겨도 마지막으로 받은 당일 봉은 여전히 그날의 값이다. 확정된 봉과 겹치는지는
+	 * 부르는 쪽({@code StockService.candles})이 날짜로 가른다.
+	 */
+	@Override
+	public Optional<SessionBar> sessionBar(String stockCode) {
+		return priceCache.get(stockCode)
+			.filter(PriceEntry::hasSessionBar)
+			.map(e -> new SessionBar(e.sessionDate(), e.sessionOpen(), e.sessionHigh(), e.sessionLow(),
+				e.currentPrice(), e.sessionVolume() == null ? 0L : e.sessionVolume()));
 	}
 
 	/** 다건. 캐시는 {@code MGET} 한 번이다. <b>요청한 모든 코드를 키로 돌려준다</b> — 없는 종목은 "값 없음" 이다 (포트 계약). */

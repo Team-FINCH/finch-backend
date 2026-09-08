@@ -6,7 +6,9 @@ import com.finch.domain.price.cache.PriceEntry;
 import com.finch.domain.price.event.PriceObservedEvent;
 import com.finch.domain.price.feed.PriceFeed;
 import com.finch.global.lock.LeaderLock;
+import com.finch.global.util.KstTime;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -104,7 +106,12 @@ public class KisPollingFeed implements PriceFeed, SmartLifecycle {
 		for (String code : codes) {
 			try {
 				KisQuote quote = client.currentPrice(key, code);
-				priceCache.put(code, new PriceEntry(quote.currentPrice(), quote.previousClose(), Instant.now()));
+				Instant now = Instant.now();
+				// 당일 봉은 누적하지 않는다 — KIS 현재가 응답이 그날의 시가·고가·저가·누적거래량을 매번 완결된 값으로 준다.
+				// 우리가 관측한 것만 모으면 폴링을 시작하기 전의 움직임이 빠진다.
+				priceCache.put(code, new PriceEntry(quote.currentPrice(), quote.previousClose(), now,
+					LocalDate.ofInstant(now, KstTime.ZONE), quote.sessionOpen(), quote.sessionHigh(),
+					quote.sessionLow(), quote.sessionVolume()));
 				publishIfChanged(code, quote);
 				filled++;
 			} catch (KisException e) {

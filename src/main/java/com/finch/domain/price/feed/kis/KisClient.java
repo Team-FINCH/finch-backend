@@ -81,8 +81,11 @@ public class KisClient {
 			throw new KisException(KisException.Kind.REJECTED, "KIS 현재가 응답에 output 이 없다 code=" + stockCode);
 		}
 		boolean suspended = "Y".equalsIgnoreCase(out.tempStop()) || "58".equals(out.statusCode());
+		// 장 전이거나 그날 거래가 없으면 KIS 가 시가·고가·저가를 0 으로 준다. 0 은 값이 아니라 "아직 없다" 라서 null 로 바꾼다 —
+		// 그대로 두면 진행 중 봉의 저가가 0 이 되어 차트가 바닥까지 늘어난다.
 		return new KisQuote(parseLong(out.currentPrice()), parseLongOrNull(out.basePrice()), suspended,
-			statusReason(out.statusCode()));
+			statusReason(out.statusCode()), parseLongOrNull(out.sessionOpen()), parseLongOrNull(out.sessionHigh()),
+			parseLongOrNull(out.sessionLow()), parseVolumeOrNull(out.sessionVolume()));
 	}
 
 	/**
@@ -264,6 +267,15 @@ public class KisClient {
 		return value == null || value.isBlank() ? 0L : Long.parseLong(value.trim());
 	}
 
+	/** 거래량은 0 이 정상값이다 — 장 전이나 거래 없는 종목이다. 그래서 0 을 버리지 않는다. */
+	private static Long parseVolumeOrNull(String value) {
+		if (value == null || value.isBlank()) {
+			return null;
+		}
+		long parsed = Long.parseLong(value.trim());
+		return parsed >= 0 ? parsed : null;
+	}
+
 	private static Long parseLongOrNull(String value) {
 		if (value == null || value.isBlank()) {
 			return null;
@@ -300,7 +312,9 @@ public class KisClient {
 	 */
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	record PriceOutput(@JsonProperty("stck_prpr") String currentPrice, @JsonProperty("stck_sdpr") String basePrice,
-		@JsonProperty("temp_stop_yn") String tempStop, @JsonProperty("iscd_stat_cls_code") String statusCode) {
+		@JsonProperty("temp_stop_yn") String tempStop, @JsonProperty("iscd_stat_cls_code") String statusCode,
+		@JsonProperty("stck_oprc") String sessionOpen, @JsonProperty("stck_hgpr") String sessionHigh,
+		@JsonProperty("stck_lwpr") String sessionLow, @JsonProperty("acml_vol") String sessionVolume) {
 	}
 
 	@JsonIgnoreProperties(ignoreUnknown = true)
