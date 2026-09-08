@@ -89,6 +89,10 @@ public class StockService {
 	 * <b>읽는 것은 언제나 일봉이다.</b> 주봉·월봉은 {@link CandleAggregator} 가 그 자리에서 묶는다 — 저장은
 	 * {@code daily_candle} 하나이고 마이그레이션이 없다 (erd.md §2.8). 묶는 규칙은 그 클래스 주석에 있다.
 	 * <p>
+	 * <b>마지막에 진행 중인 당일 봉을 얹는다</b> ({@link PriceQueryPort#sessionBar}). 확정 전의 봉이라 저장하지 않고
+	 * 응답을 만들 때마다 시세 캐시에서 새로 읽는다 — 저장하면 미완성인 채로 굳는다
+	 * ({@link CandleSyncService#backfillIfEmpty} 주석). 16:00 배치가 그날을 저장하면 날짜 비교에서 걸러져 저절로 멈춘다.
+	 * <p>
 	 * <b>이 메서드에는 {@code @Transactional} 이 없다.</b> 봉이 없는 종목이면 {@link CandleSyncService#backfillIfEmpty} 가 KIS 를 부르는데
 	 * (S10 lazy 적재) 외부 HTTP 는 트랜잭션 밖이어야 한다. 읽기 둘은 각자 짧은 트랜잭션으로 충분하다 — 지연 로딩이 없다.
 	 */
@@ -99,7 +103,8 @@ public class StockService {
 		LocalDate from = to.minusDays(period.days());
 		List<DailyCandle> dailies = dailyCandleRepository.findByStockCodeAndTradeDateBetweenOrderByTradeDateAsc(stockCode, from,
 			to);
-		return CandleRes.of(stockCode, period, interval, CandleAggregator.aggregate(dailies, interval));
+		PriceQueryPort.SessionBar session = priceQueryPort.sessionBar(stockCode).orElse(null);
+		return CandleRes.of(stockCode, period, interval, CandleAggregator.aggregate(dailies, interval, session));
 	}
 
 	/**

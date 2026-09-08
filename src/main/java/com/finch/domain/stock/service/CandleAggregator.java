@@ -3,6 +3,7 @@ package com.finch.domain.stock.service;
 import com.finch.domain.stock.dto.request.CandleInterval;
 import com.finch.domain.stock.dto.response.CandleRes;
 import com.finch.domain.stock.entity.DailyCandle;
+import com.finch.domain.stock.port.PriceQueryPort;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -26,6 +27,46 @@ import java.util.List;
 final class CandleAggregator {
 
 	private CandleAggregator() {
+	}
+
+	/**
+	 * 확정된 봉 뒤에 <b>진행 중인 당일 봉</b>을 얹는다 (apiSpec 5.3).
+	 * <p>
+	 * 얹는 조건이 하나다 — {@code session} 의 날짜가 <b>마지막 확정 봉보다 뒤</b>여야 한다. 같거나 앞이면 16:00 배치가
+	 * 이미 그날을 저장한 것이라 두 번 그리게 된다. 이 판정 덕분에 배치가 도는 순간 얹는 동작이 저절로 멈춘다.
+	 * <p>
+	 * <b>{@code DAY} 는 새 봉으로 붙고, {@code WEEK}·{@code MONTH} 는 마지막 봉에 합쳐진다.</b> 오늘이 이번 주에 속하므로
+	 * 주봉을 하나 더 만들면 같은 주가 둘이 된다. 합칠 때는 고가·저가를 다시 비교하고 종가를 현재가로 바꾸고 거래량을 더한다 —
+	 * 시가는 그 주의 첫 거래일 것이라 그대로 둔다.
+	 */
+	static List<CandleRes.Candle> aggregate(List<DailyCandle> dailies, CandleInterval interval,
+		PriceQueryPort.SessionBar session) {
+		List<CandleRes.Candle> bars = aggregate(dailies, interval);
+		if (session == null) {
+			return bars;
+		}
+		LocalDate lastStored = dailies.isEmpty() ? null : dailies.getLast().getTradeDate();
+		if (lastStored != null && !session.date().isAfter(lastStored)) {
+			return bars;
+		}
+
+		CandleRes.Candle live = new CandleRes.Candle(session.date(), session.open(), session.high(), session.low(),
+			session.close(), session.volume());
+		if (bars.isEmpty()) {
+			return List.of(live);
+		}
+
+		CandleRes.Candle tail = bars.getLast();
+		if (!interval.bucketOf(session.date()).equals(interval.bucketOf(tail.date()))) {
+			List<CandleRes.Candle> out = new ArrayList<>(bars);
+			out.add(live);
+			return out;
+		}
+
+		List<CandleRes.Candle> out = new ArrayList<>(bars.subList(0, bars.size() - 1));
+		out.add(new CandleRes.Candle(tail.date(), tail.open(), Math.max(tail.high(), session.high()),
+			Math.min(tail.low(), session.low()), session.close(), tail.volume() + session.volume()));
+		return out;
 	}
 
 	/**
