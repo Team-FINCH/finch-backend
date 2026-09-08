@@ -74,8 +74,31 @@ class CandleSyncServiceTest {
 
 		assertThat(first.candles()).hasSize(2);
 		assertThat(second.candles()).hasSize(2);
-		verify(candleSource, times(1)).dailyCandles(eq(code), eq(today.minusDays(1095)), eq(today));
+		// to 는 어제다. 장중에 부르면 KIS 가 진행 중인 오늘 봉을 주는데, 저장하면 영영 미완성으로 굳는다.
+		LocalDate yesterday = today.minusDays(1);
+		verify(candleSource, times(1)).dailyCandles(eq(code), eq(yesterday.minusDays(1095)), eq(yesterday));
 		// 마지막 봉 종가로 기준가를 맞춘다.
+		assertThat(stockRepository.findById(code).orElseThrow().getPreviousClose()).isEqualTo(108L);
+	}
+
+	/**
+	 * 장중에 백필이 돌면 원천이 진행 중인 오늘 봉을 함께 줄 수 있다. 그것을 저장하면 다시 고칠 경로가 없다 —
+	 * 백필은 봉이 있으면 안 돌고, 일일 갱신은 마지막 봉 다음 날부터 받고, save 는 이미 있는 날을 거른다.
+	 * 그래서 요청 자체가 어제까지여야 한다.
+	 */
+	@Test
+	@DisplayName("원천이 오늘 봉을 섞어 줘도 저장하지 않는다 — 확정된 봉만 넣는다")
+	void doesNotStoreTodaysUnfinishedCandle() {
+		String code = newStock(10_000L);
+		LocalDate today = LocalDate.now(KstTime.ZONE);
+		given(candleSource.dailyCandles(eq(code), any(), any())).willReturn(List.of(
+			new CandleData(today.minusDays(1), 105, 115, 95, 108, 8),
+			new CandleData(today, 108, 120, 100, 119, 3)));
+
+		stockService.candles(code, CandlePeriod.ONE_MONTH, CandleInterval.DAY);
+
+		assertThat(dailyCandleRepository.findLatestTradeDate(code)).contains(today.minusDays(1));
+		// 기준가도 어제 종가여야 한다. 오늘 미완성 봉으로 맞추면 그 종목의 등락률이 계속 틀린다.
 		assertThat(stockRepository.findById(code).orElseThrow().getPreviousClose()).isEqualTo(108L);
 	}
 

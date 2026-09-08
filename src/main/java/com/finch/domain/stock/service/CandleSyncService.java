@@ -61,6 +61,12 @@ public class CandleSyncService {
 	/**
 	 * 봉이 없는 종목이면 {@code backfill-days} 만큼 받아 넣는다. 있으면 아무것도 하지 않는다 — 두 번째 요청은 원천을 부르지 않는다.
 	 * <b>실패해도 던지지 않는다.</b> 차트 요청이 KIS 장애로 500 이 되면 안 된다 — 빈 차트가 맞다. 다음 요청이 다시 시도한다.
+	 * <p>
+	 * <b>{@code to} 가 오늘이 아니라 어제다.</b> 장중에 부르면 KIS 가 <b>진행 중인 오늘 봉</b>을 함께 주는데, 그것을 저장하면
+	 * 영영 미완성으로 굳는다 — {@link #backfillIfEmpty} 는 봉이 하나라도 있으면 다시 부르지 않고, {@link #refreshDailyNow} 는
+	 * <b>마지막 봉 다음 날부터</b> 받으므로 오늘을 건너뛰며, {@link #save} 는 이미 있는 날을 거른다. 게다가 그 값으로
+	 * {@code stock.previous_close} 까지 맞춰져 그 종목의 등락률이 계속 틀린다. 그래서 <b>확정된 봉만 저장한다</b> —
+	 * 오늘 봉은 16:00 배치가 정상 경로로 넣는다.
 	 *
 	 * @return 넣은 봉 수.
 	 */
@@ -68,11 +74,11 @@ public class CandleSyncService {
 		if (dailyCandleRepository.existsByStockCode(stockCode)) {
 			return 0;
 		}
-		LocalDate to = LocalDate.now(KstTime.ZONE);
+		LocalDate to = LocalDate.now(KstTime.ZONE).minusDays(1);
 		LocalDate from = to.minusDays(properties.candle().backfillDays());
 		try {
 			List<CandleData> fetched = candleSource.dailyCandles(stockCode, from, to);
-			int saved = save(stockCode, fetched);
+			int saved = save(stockCode, fetched, to);
 			if (saved > 0) {
 				log.info("일봉 lazy 적재 code={} rows={} from={} to={}", stockCode, saved, from, to);
 			}
@@ -107,7 +113,7 @@ public class CandleSyncService {
 				if (from.isAfter(today)) {
 					continue;
 				}
-				added += save(code, candleSource.dailyCandles(code, from, today));
+				added += save(code, candleSource.dailyCandles(code, from, today), today);
 			} catch (RuntimeException e) {
 				log.warn("일봉 일일 갱신 실패 code={}: {}", code, e.getMessage());
 			}
@@ -120,8 +126,12 @@ public class CandleSyncService {
 	 * 저장은 짧은 자기 트랜잭션. <b>원천이 준 날짜 범위 전체</b>에서 이미 있는 날을 걸러 건너뛴다 — 원천은 요청한 {@code from} 보다
 	 * 앞의 봉을 섞어 줄 수 있고(KIS 는 영업일 기준으로 창을 채운다), 하나라도 PK (종목, 날짜) 에 걸리면 저장 전체가 롤백된다.
 	 * 마지막 봉 종가로 기준가를 맞춘다.
+	 *
+	 * @param maxDate 이 날짜 뒤의 봉은 버린다. 원천은 요청한 {@code to} 보다 <b>뒤</b>의 봉도 섞어 줄 수 있고, 장중이라면 그것이
+	 *                진행 중인 오늘 봉이다. 한 번 저장되면 다시 고칠 경로가 없으므로({@link #backfillIfEmpty} 주석) 여기서 막는다.
+	 *                백필은 어제, 일일 갱신은 오늘이다 — 배치는 장 마감 뒤에 돌아 당일 봉이 확정돼 있다.
 	 */
-	private int save(String stockCode, List<CandleData> fetched) {
+	private int save(String stockCode, List<CandleData> fetched, LocalDate maxDate) {
 		if (fetched.isEmpty()) {
 			return 0;
 		}
@@ -130,6 +140,7 @@ public class CandleSyncService {
 		Set<LocalDate> existing = Set.copyOf(dailyCandleRepository.findTradeDatesBetween(stockCode, first, last));
 		List<DailyCandle> candles = fetched.stream()
 			.sorted((a, b) -> a.tradeDate().compareTo(b.tradeDate()))
+			.filter(c -> !c.tradeDate().isAfter(maxDate))
 			.filter(c -> !existing.contains(c.tradeDate()))
 			.map(c -> DailyCandle.of(stockCode, c.tradeDate(), c.open(), c.high(), c.low(), c.close(), c.volume()))
 			.toList();
