@@ -221,6 +221,10 @@ finch:
   http:
     # 외부 API(카카오·KIS·AI) 연결까지의 제한. 응답 대기 시간은 호출하는 쪽이 각자 정한다 (FinchProperties.Http).
     connect-timeout: 3s
+    # 유휴 연결 폐기까지의 시간. 상대 서버의 keep-alive 보다 짧아야 한다 — AI 의 uvicorn 이 기본 5초다.
+    # 길면 상대가 이미 닫은 연결을 풀에서 꺼내 쓰고 'Connection prematurely closed' 로 실패한다 (이슈 207).
+    max-idle-time: 2s
+    evict-interval: 30s
 
   idempotency:
     # Idempotency-Key 를 요구할 경로. 여기 없는 경로는 필터를 타지 않는다.

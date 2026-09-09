@@ -36,8 +36,16 @@ public record FinchProperties(@DefaultValue Market market, @DefaultValue Http ht
 	 * @param connectTimeout TCP 연결까지의 제한. 응답 대기 시간은 여기 두지 않는다 — 카카오·KIS·AI 가
 	 *                       서로 다르고(AI 는 LLM 이라 90초까지 간다) 공통값으로 묶으면 하나를 늘릴 때
 	 *                       나머지도 같이 늘어난다. 연결 실패는 상대가 누구든 빨리 포기하는 것이 맞다.
+	 * @param maxIdleTime    커넥션 풀이 유휴 연결을 들고 있는 시간. <b>상대 서버의 keep-alive 보다 짧아야
+	 *                       한다.</b> 길면 서버가 이미 닫은 연결을 풀에서 꺼내 쓰고
+	 *                       {@code Connection prematurely closed BEFORE response} 로 실패한다. AI 서버의
+	 *                       uvicorn 이 기본 5초이므로 그보다 짧은 2초로 둔다. 사람이 눌러야 도는 AI 호출은
+	 *                       요청 간격이 5초를 넘기 쉬워 이 값이 없으면 간헐적으로 실패한다.
+	 * @param evictInterval  풀이 유휴 연결을 걷어내는 주기. 꺼낼 때도 {@code maxIdleTime} 을 보지만,
+	 *                       주기적으로 미리 닫아 두면 반쯤 닫힌 연결을 잡을 확률이 줄어든다.
 	 */
-	public record Http(@DefaultValue("3s") Duration connectTimeout) {
+	public record Http(@DefaultValue("3s") Duration connectTimeout, @DefaultValue("2s") Duration maxIdleTime,
+		@DefaultValue("30s") Duration evictInterval) {
 	}
 
 	/**
