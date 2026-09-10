@@ -40,7 +40,7 @@ import tools.jackson.databind.json.JsonMapper;
  * AI 서버를 부르지 않고 응답만 흉내낸다 ({@code KakaoPayGatewayTest} 와 같은 방식). 스프링 없이 돈다.
  * <p>
  * 고정하는 것 — (1) 재포장: 봉투 보존 4종·제거 3종·중첩 camel·{@code ticker} 유지, 결과가 apiSpec 10.3 예시 모양 (2) 요청 camel→snake,
- * 헤더(내부 토큰·X-User-Id 덮어쓰기), 경로·쿼리 매핑 (3) 에러: AI 코드 통과 + requestId, 401/403 → 502, 429 → 503 + Retry-After,
+ * 헤더(내부 토큰·X-User-Id 덮어쓰기), 경로·쿼리 매핑 (3) 에러: AI 코드 통과 + requestId, 401/403 → 502, 429 는 상태 유지 + reason·message 보존,
  * 연결 실패 502, 타임아웃 504.
  */
 class AiRelayServiceTest {
@@ -179,38 +179,45 @@ class AiRelayServiceTest {
 		}
 
 		@Test
-		@DisplayName("429 는 503 AI_UPSTREAM_RATE_LIMITED 이고 Retry-After 는 AI 값(초·날짜) 또는 기본 5초, 최소 1초다")
-		void repackagesRateLimit() {
-			Function<String, AiRelayException> with = header -> {
-				AiRelayService service = service(req -> {
-					ClientResponse.Builder b = ClientResponse.create(HttpStatus.TOO_MANY_REQUESTS)
-						.header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-						.body("{\"code\":\"RATE_LIMITED\",\"message\":\"한도\",\"request_id\":\"req_rl\"}");
-					if (header != null) {
-						b.header(HttpHeaders.RETRY_AFTER, header);
-					}
-					return b.build();
-				});
-				try {
-					service.relay(AiRoute.CHAT, null, null, 42L, null);
-					throw new AssertionError("예외가 나야 한다");
-				} catch (AiRelayException e) {
-					return e;
-				}
-			};
-
-			AiRelayException fromSeconds = with.apply("12");
-			assertThat(fromSeconds.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+		@DisplayName("429 는 상태 그대로 AI_UPSTREAM_RATE_LIMITED 이고 Retry-After 는 AI 값(초·날짜), 최소 1초다")
+		void keepsRateLimitStatus() {
+			AiRelayException fromSeconds = rateLimited("12", "{\"code\":\"RATE_LIMITED\",\"message\":\"한도\","
+				+ "\"detail\":{\"reason\":\"request_rate_limit\"},\"request_id\":\"req_rl\"}");
+			assertThat(fromSeconds.getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
 			assertThat(fromSeconds.getCode()).isEqualTo("AI_UPSTREAM_RATE_LIMITED");
 			assertThat(fromSeconds.getRetryAfterSeconds()).isEqualTo(12L);
 			assertThat(fromSeconds.getRequestId()).isEqualTo("req_rl");
-			assertThat(fromSeconds.getDetail()).isNull();
 
 			String date = DateTimeFormatter.RFC_1123_DATE_TIME.format(ZonedDateTime.now().plusSeconds(30));
-			assertThat(with.apply(date).getRetryAfterSeconds()).isBetween(28L, 30L);
-			assertThat(with.apply(null).getRetryAfterSeconds()).isEqualTo(5L);
-			assertThat(with.apply("0").getRetryAfterSeconds()).isEqualTo(1L);
-			assertThat(with.apply("garbage").getRetryAfterSeconds()).isEqualTo(5L);
+			assertThat(rateLimited(date, RATE_LIMIT_BODY).getRetryAfterSeconds()).isBetween(28L, 30L);
+			assertThat(rateLimited("0", RATE_LIMIT_BODY).getRetryAfterSeconds()).isEqualTo(1L);
+		}
+
+		@Test
+		@DisplayName("Retry-After 는 AI 가 준 경우에만 실린다 — 없거나 못 읽으면 기본값을 지어내지 않는다")
+		void omitsRetryAfterWhenUpstreamGivesNone() {
+			// daily_token_budget 은 자정까지 풀리지 않아 AI 가 헤더를 주지 않는다. 5초를 지어내면 프론트가 5초 뒤 또 막힌다.
+			assertThat(rateLimited(null, RATE_LIMIT_BODY).getRetryAfterSeconds()).isNull();
+			assertThat(rateLimited("garbage", RATE_LIMIT_BODY).getRetryAfterSeconds()).isNull();
+		}
+
+		@Test
+		@DisplayName("429 는 detail.reason 과 AI 의 message 를 보존하고 reason 외의 키는 버린다")
+		void keepsRateLimitReasonAndMessage() {
+			AiRelayException budget = rateLimited(null, "{\"code\":\"RATE_LIMITED\","
+				+ "\"message\":\"오늘 사용할 수 있는 AI 분석량을 모두 사용했습니다.\","
+				+ "\"detail\":{\"reason\":\"daily_token_budget\",\"used_tokens\":500000,\"limit_tokens\":500000},"
+				+ "\"request_id\":\"req_budget\"}");
+			assertThat(budget.getDetail()).isEqualTo(Map.of("reason", "daily_token_budget"));
+			assertThat(budget.getMessage()).isEqualTo("오늘 사용할 수 있는 AI 분석량을 모두 사용했습니다.");
+
+			AiRelayException rate = rateLimited("12", RATE_LIMIT_BODY);
+			assertThat(rate.getDetail()).isEqualTo(Map.of("reason", "request_rate_limit"));
+
+			// reason 이 없으면 detail 자체를 싣지 않는다. message 가 없으면 백엔드 기본 문구로 채운다.
+			AiRelayException bare = rateLimited("3", "{\"code\":\"RATE_LIMITED\",\"request_id\":\"req_bare\"}");
+			assertThat(bare.getDetail()).isNull();
+			assertThat(bare.getMessage()).isEqualTo(AiErrorCode.AI_UPSTREAM_RATE_LIMITED.getMessage());
 		}
 
 		@Test
@@ -253,6 +260,28 @@ class AiRelayServiceTest {
 
 	// ---- helpers ----
 
+	private static final String RATE_LIMIT_BODY = "{\"code\":\"RATE_LIMITED\",\"message\":\"요청이 너무 많습니다.\","
+		+ "\"detail\":{\"reason\":\"request_rate_limit\",\"endpoint\":\"stocks.analysis\"},\"request_id\":\"req_rl\"}";
+
+	/** 429 응답 하나를 흘려보내고 나온 예외를 준다. {@code header} 가 {@code null} 이면 {@code Retry-After} 를 붙이지 않는다. */
+	private AiRelayException rateLimited(String header, String body) {
+		AiRelayService service = service(req -> {
+			ClientResponse.Builder b = ClientResponse.create(HttpStatus.TOO_MANY_REQUESTS)
+				.header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+				.body(body);
+			if (header != null) {
+				b.header(HttpHeaders.RETRY_AFTER, header);
+			}
+			return b.build();
+		});
+		try {
+			service.relay(AiRoute.CHAT, null, null, 42L, null);
+			throw new AssertionError("예외가 나야 한다");
+		} catch (AiRelayException e) {
+			return e;
+		}
+	}
+
 	private AiRelayService service(Function<ClientRequest, ClientResponse> responder) {
 		WebClient.Builder builder = WebClient.builder().exchangeFunction(request -> {
 			sent.add(request);
@@ -262,7 +291,7 @@ class AiRelayServiceTest {
 	}
 
 	private static AiProperties properties(Duration timeout) {
-		return new AiProperties("https://ai.test", "ai-token", timeout, Duration.ofSeconds(5));
+		return new AiProperties("https://ai.test", "ai-token", timeout);
 	}
 
 	private static ClientResponse json(HttpStatus status, String body) {

@@ -127,14 +127,14 @@ class AiRelayControllerTest {
 	}
 
 	@Test
-	@DisplayName("AI 코드는 상태·code·requestId 그대로, 503 재포장분은 Retry-After 헤더, 도달 실패분은 백엔드 코드")
+	@DisplayName("AI 코드는 상태·code·requestId 그대로, 429 는 detail.reason 과 Retry-After 헤더, 도달 실패분은 백엔드 코드")
 	void errorsReachClientAsContracted() throws Exception {
 		givenLoggedIn(42L);
 		given(relayService.relay(eq(AiRoute.CHAT), any(), any(), eq(42L), any()))
 			.willThrow(new AiRelayException(HttpStatus.CONFLICT, "INSUFFICIENT_DATA", "데이터 부족", null, "req_1"));
 		given(relayService.relay(eq(AiRoute.BRIEFING), any(), any(), eq(42L), any()))
-			.willThrow(new AiRelayException(HttpStatus.SERVICE_UNAVAILABLE, "AI_UPSTREAM_RATE_LIMITED",
-				AiErrorCode.AI_UPSTREAM_RATE_LIMITED.getMessage(), null, "req_2", 7L));
+			.willThrow(new AiRelayException(HttpStatus.TOO_MANY_REQUESTS, "AI_UPSTREAM_RATE_LIMITED",
+				"요청이 너무 많습니다.", Map.of("reason", "request_rate_limit"), "req_2", 7L));
 		given(relayService.relay(eq(AiRoute.WIKI), any(), any(), eq(42L), any()))
 			.willThrow(new CustomException(AiErrorCode.AI_UPSTREAM_TIMEOUT));
 
@@ -143,9 +143,11 @@ class AiRelayControllerTest {
 			.andExpect(jsonPath("$.code").value("INSUFFICIENT_DATA"))
 			.andExpect(jsonPath("$.requestId").value("req_1"));
 		mockMvc.perform(authed(get("/api/v1/ai/briefing")))
-			.andExpect(status().isServiceUnavailable())
+			.andExpect(status().isTooManyRequests())
 			.andExpect(header().string(HttpHeaders.RETRY_AFTER, "7"))
 			.andExpect(jsonPath("$.code").value("AI_UPSTREAM_RATE_LIMITED"))
+			.andExpect(jsonPath("$.message").value("요청이 너무 많습니다."))
+			.andExpect(jsonPath("$.detail.reason").value("request_rate_limit"))
 			.andExpect(jsonPath("$.requestId").value("req_2"));
 		mockMvc.perform(authed(get("/api/v1/ai/wiki")))
 			.andExpect(status().isGatewayTimeout())

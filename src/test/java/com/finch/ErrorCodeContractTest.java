@@ -62,7 +62,7 @@ class ErrorCodeContractTest {
 		Map.entry("INTERNAL_ERROR", HttpStatus.INTERNAL_SERVER_ERROR),
 		// AI 중계 (백엔드 발행분)
 		Map.entry("AI_UPSTREAM_UNAVAILABLE", HttpStatus.BAD_GATEWAY),
-		Map.entry("AI_UPSTREAM_RATE_LIMITED", HttpStatus.SERVICE_UNAVAILABLE),
+		Map.entry("AI_UPSTREAM_RATE_LIMITED", HttpStatus.TOO_MANY_REQUESTS),
 		Map.entry("AI_UPSTREAM_TIMEOUT", HttpStatus.GATEWAY_TIMEOUT),
 		// 충전
 		Map.entry("DEPOSIT_AMOUNT_INVALID", HttpStatus.BAD_REQUEST),
