@@ -22,8 +22,12 @@ public enum AiErrorCode implements BaseErrorCode {
 
 	/** 연결 실패·비정상 응답, 그리고 upstream 401·403 의 재포장분 (detail.reason=upstream_auth). apiSpec 10.4. */
 	AI_UPSTREAM_UNAVAILABLE(HttpStatus.BAD_GATEWAY, "AI 서비스에 연결할 수 없어요. 잠시 후 다시 시도해 주세요"),
-	/** upstream 429 의 재포장분. {@code Retry-After} 헤더가 실린다 (v0.8.1). 그대로 흘리면 사용자가 요청을 많이 보낸 것으로 오인된다. */
-	AI_UPSTREAM_RATE_LIMITED(HttpStatus.SERVICE_UNAVAILABLE, "AI 요청이 많아 잠시 후 다시 시도해 주세요"),
+	/**
+	 * upstream 429. <b>상태는 429 그대로다</b> — AI 의 한도는 {@code (user_id, endpoint)} 단위라 "이 사용자가 많이 보냈다" 가
+	 * 사실이다 (v0.8.6). code 만 바꿔 AI 다리에서 온 한도임을 표시한다. 이 문구는 AI 가 message 를 주지 않았을 때만 쓰는
+	 * 폴백이다 — 실제로는 AI 의 문구가 내려간다 (apiSpec 10.4).
+	 */
+	AI_UPSTREAM_RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "AI 요청 한도에 도달했어요"),
 	AI_UPSTREAM_TIMEOUT(HttpStatus.GATEWAY_TIMEOUT, "AI 응답이 지연되어 중단했어요. 다시 시도해 주세요");
 
 	private final HttpStatus status;

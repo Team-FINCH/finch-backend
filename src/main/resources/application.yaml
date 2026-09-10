@@ -204,8 +204,6 @@ finch:
     # 응답 대기 제한. AI 의 LLM 타임아웃보다 길어야 AI 가 먼저 504 LLM_TIMEOUT 을 돌려준다 — 우리가 먼저 끊으면 프론트가
     # AI_UPSTREAM_TIMEOUT 을 받아 재시도하고 호출량만 는다. 90초는 가정값이고 AI 파트 확인 후 조정한다 (backend_story §6).
     timeout: 90s
-    # AI 가 429 에 Retry-After 를 주지 않았을 때 503 AI_UPSTREAM_RATE_LIMITED 에 싣는 기본값 (apiSpec 10.4, 최소 1초).
-    rate-limit-retry-after: 5s
 
   internal:
     # /internal/v1 (AI 서버 전용, apiSpec 9장) 의 X-Internal-Token 과 대조할 값. AI 쪽 BACKEND_SERVICE_TOKEN 과 같은 값이어야 한다.

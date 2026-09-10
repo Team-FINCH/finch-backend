@@ -14,13 +14,11 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param timeout             응답 대기 제한. <b>AI 의 LLM 타임아웃보다 길게</b> 둔다 — AI 가 먼저 {@code 504 LLM_TIMEOUT} 을 돌려주게
  *                            하기 위해서다. 우리가 먼저 끊으면 AI 는 이미 답을 만들고 있는데 프론트는 {@code AI_UPSTREAM_TIMEOUT} 을
  *                            받아 재시도하고, 호출량만 는다. 90초는 가정값이고 AI 파트 확인 후 조정한다 (backend_story §6).
- * @param rateLimitRetryAfter AI 가 429 에 {@code Retry-After} 를 주지 않았을 때 503 에 싣는 기본값 (apiSpec 10.4, 기본 5초).
  */
 @ConfigurationProperties("finch.ai")
 public record AiProperties(
 	@DefaultValue("http://localhost:8000") String baseUrl,
 	String internalToken,
-	@DefaultValue("90s") Duration timeout,
-	@DefaultValue("5s") Duration rateLimitRetryAfter
+	@DefaultValue("90s") Duration timeout
 ) {
 }

@@ -1,6 +1,5 @@
 package com.finch.domain.ai.relay;
 
-import com.finch.domain.ai.AiProperties;
 import com.finch.domain.ai.exception.AiErrorCode;
 import com.finch.global.exception.AiRelayException;
 import com.finch.global.exception.CustomException;
@@ -23,15 +22,23 @@ import tools.jackson.databind.ObjectMapper;
  * 통과</b>시키고 {@code request_id} 를 {@code requestId} 로 보존하는 것이다. 백엔드가 자기 5xx 로 뭉개면 프론트가 AI 위젯만 접고
  * 시세·주문을 살리는 에러 경계를 만들 수 없다.
  * <p>
- * 예외가 둘이다 (v0.8).
+ * 예외가 둘이다.
  * <ul>
- *   <li><b>401·403 → 502 {@code AI_UPSTREAM_UNAVAILABLE}</b>, {@code detail.reason=upstream_auth}. 그대로 흘리면 프론트 인증
- *       인터셉터가 사용자 토큰 만료로 오인해 로그아웃시킨다. 실제 원인은 백엔드↔AI 의 내부 토큰이고 사용자와 무관하다.</li>
- *   <li><b>429 → 503 {@code AI_UPSTREAM_RATE_LIMITED}</b> + {@code Retry-After}. 그대로 흘리면 사용자가 요청을 많이 보낸 것으로
- *       오인된다. 실제로는 백엔드 전체의 AI 호출량이 상한에 닿은 것이다. 간격은 AI 가 준 값, 없으면 기본 5초, 최소 1초.</li>
+ *   <li><b>401·403 → 502 {@code AI_UPSTREAM_UNAVAILABLE}</b>, {@code detail.reason=upstream_auth} (v0.8). 그대로 흘리면 프론트
+ *       인증 인터셉터가 사용자 토큰 만료로 오인해 로그아웃시킨다. 실제 원인은 백엔드↔AI 의 내부 토큰이고 사용자와 무관하다.
+ *       <b>AI 가 준 {@code detail} 은 버린다</b> — 내부 인증 실패 메시지에는 사용자에게 보여줄 것이 없다.</li>
+ *   <li><b>429 는 상태를 그대로 두고 {@code code} 만 {@code AI_UPSTREAM_RATE_LIMITED} 로 바꾼다</b> (v0.8.6). AI 다리에서 온
+ *       한도임을 표시할 뿐이다. v0.8 은 이것을 503 으로 바꿨는데 그 근거("백엔드 전체의 호출량이 상한에 닿은 것")가 사실과
+ *       달랐다 — AI 의 한도는 {@code (user_id, endpoint)} 단위라 429 의 뜻 그대로다.</li>
  * </ul>
- * 두 경우 AI 가 준 {@code detail} 은 버린다 — 내부 인증 실패 메시지에는 사용자에게 보여줄 것이 없다. {@code requestId} 는 있으면
- * 보존한다 (contracts C70).
+ * 429 에서는 AI 가 준 것을 최대한 살린다. {@code detail.reason} 은 <b>분당 횟수 한도({@code request_rate_limit})와 그날의
+ * 사용량 소진({@code daily_token_budget})을 가르는 유일한 값</b>이고 둘은 풀리는 시점이 다르다 — 앞은 {@code Retry-After} 초
+ * 뒤, 뒤는 자정이다. {@code message} 도 AI 것이 정확하므로 그대로 옮긴다. 다만 {@code reason} 외의 키
+ * ({@code endpoint}·{@code used_tokens}·{@code limit_tokens})는 내부 값이라 옮기지 않는다.
+ * <p>
+ * {@code Retry-After} 는 <b>AI 가 준 경우에만</b> 싣는다. AI 는 {@code daily_token_budget} 일 때 헤더를 주지 않는데, 그 자리를
+ * 기본값으로 채우면 자정까지 풀리지 않을 요청을 몇 초 뒤에 다시 보내라고 말하는 것이 된다. 없으면 프론트가 자체 백오프로
+ * 판단한다. {@code requestId} 는 세 경우 모두 있으면 보존한다 (contracts C70).
  * <p>
  * AI 가 응답조차 하지 않은 경우는 백엔드 자체 코드다 — 연결 실패 502 {@code AI_UPSTREAM_UNAVAILABLE}, 타임아웃 504
  * {@code AI_UPSTREAM_TIMEOUT}. 둘 다 {@code requestId} 가 없다.
@@ -43,8 +50,7 @@ final class AiUpstreamErrors {
 	}
 
 	/** 2xx 가 아닌 응답. 본문이 aiApiSpec §3 형식이면 그대로, 아니면 "비정상 응답" 이다. */
-	static RuntimeException toException(HttpStatusCode status, HttpHeaders headers, String body, ObjectMapper mapper,
-		AiProperties properties) {
+	static RuntimeException toException(HttpStatusCode status, HttpHeaders headers, String body, ObjectMapper mapper) {
 		JsonNode node = parse(body, mapper);
 		String requestId = node == null ? null : text(node, "request_id");
 		if (status.value() == HttpStatus.UNAUTHORIZED.value() || status.value() == HttpStatus.FORBIDDEN.value()) {
@@ -56,8 +62,10 @@ final class AiUpstreamErrors {
 		}
 		if (status.value() == HttpStatus.TOO_MANY_REQUESTS.value()) {
 			AiErrorCode code = AiErrorCode.AI_UPSTREAM_RATE_LIMITED;
-			return new AiRelayException(code.getStatus(), code.getCode(), code.getMessage(), null, requestId,
-				retryAfterSeconds(headers.getFirst(HttpHeaders.RETRY_AFTER), properties.rateLimitRetryAfter()));
+			String reason = reason(node);
+			return new AiRelayException(code.getStatus(), code.getCode(), message(node, code),
+				reason == null ? null : Map.of("reason", reason), requestId,
+				retryAfterSeconds(headers.getFirst(HttpHeaders.RETRY_AFTER)));
 		}
 		if (node == null || !node.hasNonNull("code")) {
 			log.warn("AI 서버가 에러 형식이 아닌 응답을 줬다 status={} body={}", status, abbreviate(body));
@@ -97,25 +105,44 @@ final class AiUpstreamErrors {
 	}
 
 	/**
-	 * {@code Retry-After} 를 초 단위 정수로. 초 값이면 그대로, HTTP 날짜면 지금부터의 초로 환산, 없거나 못 읽으면 기본값.
-	 * <b>최소 1초</b> — 0 은 "즉시 재시도" 라 되풀이를 부른다 (apiSpec 10.4).
+	 * {@code Retry-After} 를 초 단위 정수로. 초 값이면 그대로, HTTP 날짜면 지금부터의 초로 환산.
+	 * <p>
+	 * <b>없거나 못 읽으면 {@code null} 이고 헤더를 싣지 않는다</b> (apiSpec 10.4, v0.8.6). 기본값을 지어내면 자정까지 풀리지
+	 * 않는 {@code daily_token_budget} 에도 "몇 초 뒤 다시" 를 말하게 된다. <b>최소 1초</b> — 0 은 "즉시 재시도" 라 되풀이를 부른다.
 	 */
-	static long retryAfterSeconds(String header, Duration fallback) {
-		long seconds = fallback.toSeconds();
-		if (header != null && !header.isBlank()) {
-			String value = header.strip();
+	static Long retryAfterSeconds(String header) {
+		if (header == null || header.isBlank()) {
+			return null;
+		}
+		String value = header.strip();
+		long seconds;
+		try {
+			seconds = Long.parseLong(value);
+		} catch (NumberFormatException notSeconds) {
 			try {
-				seconds = Long.parseLong(value);
-			} catch (NumberFormatException notSeconds) {
-				try {
-					Instant at = ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant();
-					seconds = Duration.between(Instant.now(), at).toSeconds();
-				} catch (DateTimeParseException notDate) {
-					log.warn("AI 서버의 Retry-After 를 읽지 못했다 — 기본값을 쓴다 value={}", value);
-				}
+				Instant at = ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant();
+				seconds = Duration.between(Instant.now(), at).toSeconds();
+			} catch (DateTimeParseException notDate) {
+				log.warn("AI 서버의 Retry-After 를 읽지 못했다 — 헤더를 싣지 않는다 value={}", value);
+				return null;
 			}
 		}
 		return Math.max(1, seconds);
+	}
+
+	/**
+	 * 429 의 {@code detail.reason}. 프론트가 분당 횟수 한도({@code request_rate_limit})와 그날의 사용량 소진
+	 * ({@code daily_token_budget})을 가르는 유일한 값이다. 나머지 키는 내부 값이라 옮기지 않는다 (apiSpec 10.4).
+	 */
+	private static String reason(JsonNode node) {
+		JsonNode detail = node == null ? null : node.get("detail");
+		return detail == null || !detail.isObject() ? null : text(detail, "reason");
+	}
+
+	/** 429 의 문구는 AI 것이 정확하다 — 두 한도의 문구가 이미 다르다. 없을 때만 백엔드 기본 문구로 채운다. */
+	private static String message(JsonNode node, AiErrorCode fallback) {
+		String message = node == null ? null : text(node, "message");
+		return message == null || message.isBlank() ? fallback.getMessage() : message;
 	}
 
 	static JsonNode parse(String body, ObjectMapper mapper) {

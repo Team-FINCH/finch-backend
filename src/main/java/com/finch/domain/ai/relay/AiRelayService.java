@@ -62,8 +62,7 @@ public class AiRelayService {
 		long userId, JsonNode body) {
 		Upstream upstream = exchange(route, pathVars, query, userId, body);
 		if (!upstream.status().is2xxSuccessful()) {
-			throw AiUpstreamErrors.toException(upstream.status(), upstream.headers(), upstream.body(), objectMapper,
-				properties);
+			throw AiUpstreamErrors.toException(upstream.status(), upstream.headers(), upstream.body(), objectMapper);
 		}
 		return ResponseEntity.status(upstream.status()).body(repackage(upstream.body()));
 	}
