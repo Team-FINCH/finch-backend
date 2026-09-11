@@ -22,9 +22,12 @@ backend:test:
     key:
       files:
         - backend/build.gradle
+        - backend/settings.gradle
+        - backend/gradle/wrapper/gradle-wrapper.properties
     paths:
       - .gradle/caches
       - .gradle/wrapper
+      - backend/.gradle/configuration-cache
   before_script:
     - cd backend
   # 검사 목록은 scripts/check.sh 한 곳에만 둔다. 로컬과 CI 가 갈라지지 않게.
