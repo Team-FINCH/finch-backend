@@ -41,7 +41,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * 중계 컨트롤러의 경로 10종이 JWT 로 보호되고 서비스에 올바른 라우트·경로 변수·본문을 넘기는지, 그리고 서비스가 던진 예외가
+ * 중계 컨트롤러의 경로 11종이 JWT 로 보호되고 서비스에 올바른 라우트·경로 변수·본문을 넘기는지, 그리고 서비스가 던진 예외가
  * 계약대로 나가는지(상태·code·requestId·Retry-After). 재포장·에러 규칙 자체는 {@code AiRelayServiceTest} 가 본다.
  */
 @WebMvcTest(AiRelayController.class)
@@ -114,16 +114,25 @@ class AiRelayControllerTest {
 		verify(relayService).relay(eq(AiRoute.WIKI_FACT_DELETE), eq(Map.of("factId", "f1")), isNull(), eq(42L), isNull());
 	}
 
-	/** apiSpec 10.1 — POST /wiki/theses 는 중계하지 않는다. */
+	/** apiSpec 10.1 (v0.8.8, 이슈 #56) — 매수 이유를 처음 적는 경로. 경로 변수가 없고 종목은 본문의 ticker 다. */
 	@Test
-	@DisplayName("POST /ai/wiki/theses 는 없다 (404 RESOURCE_NOT_FOUND)")
-	void thesisCreateIsNotRelayed() throws Exception {
+	@DisplayName("POST /ai/wiki/theses — 경로 변수 없이 본문을 그대로 WIKI_THESIS_CREATE 로 넘긴다")
+	void createThesis() throws Exception {
 		givenLoggedIn(42L);
+		given(relayService.relay(eq(AiRoute.WIKI_THESIS_CREATE), isNull(), isNull(), eq(42L), any()))
+			.willReturn(ResponseEntity.ok(mapper.readTree(
+				"{\"content\":{\"ticker\":\"000660\",\"status\":\"active\"},\"requestId\":\"r1\"}")));
 
-		mockMvc.perform(authed(post("/api/v1/ai/wiki/theses")).contentType(MediaType.APPLICATION_JSON).content("{}"))
-			.andExpect(status().isNotFound());
+		mockMvc.perform(authed(post("/api/v1/ai/wiki/theses")).contentType(MediaType.APPLICATION_JSON)
+				.content("{\"ticker\":\"000660\",\"text\":\"HBM 구조적 성장에 베팅\",\"linkedTradeId\":\"101\"}"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.content.ticker").value("000660"))
+			.andExpect(jsonPath("$.content.status").value("active"));
 
-		verifyNoInteractions(relayService);
+		ArgumentCaptor<JsonNode> body = ArgumentCaptor.forClass(JsonNode.class);
+		verify(relayService).relay(eq(AiRoute.WIKI_THESIS_CREATE), isNull(), isNull(), eq(42L), body.capture());
+		org.assertj.core.api.Assertions.assertThat(body.getValue().get("ticker").asString()).isEqualTo("000660");
+		org.assertj.core.api.Assertions.assertThat(body.getValue().get("linkedTradeId").asString()).isEqualTo("101");
 	}
 
 	@Test

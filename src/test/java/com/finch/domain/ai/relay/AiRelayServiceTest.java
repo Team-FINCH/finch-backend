@@ -120,6 +120,23 @@ class AiRelayServiceTest {
 				.doesNotContain("thesisText");
 		}
 
+		/** v0.8.8 에서 들어온 경로. 경로 변수가 없는 POST 도 같은 변환(camel → snake)을 탄다. */
+		@Test
+		@DisplayName("POST /wiki/theses — 경로 변수 없이 AI 의 /wiki/theses 로 가고 linkedTradeId 가 linked_trade_id 가 된다")
+		void createThesisGoesToWikiTheses() throws IOException {
+			AiRelayService service = service(req -> json(HttpStatus.OK, "{\"content\":{}}"));
+
+			service.relay(AiRoute.WIKI_THESIS_CREATE, null, null, 42L,
+				mapper.readTree("{\"ticker\":\"000660\",\"text\":\"HBM\",\"horizon\":\"long\",\"linkedTradeId\":\"101\"}"));
+
+			ClientRequest req = sent.getFirst();
+			assertThat(req.method()).isEqualTo(HttpMethod.POST);
+			assertThat(req.url()).isEqualTo(URI.create("https://ai.test/api/ai/v1/wiki/theses"));
+			assertThat(req.headers().getFirst("X-User-Id")).isEqualTo("42");
+			assertThat(bodyOf(req)).contains("\"ticker\":\"000660\"").contains("\"linked_trade_id\":\"101\"")
+				.doesNotContain("linkedTradeId");
+		}
+
 		@Test
 		@DisplayName("GET 은 본문 없이 쿼리를 그대로 넘긴다 (briefing 의 date)")
 		void forwardsQuery() {
