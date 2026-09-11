@@ -1,5 +1,6 @@
 package com.finch.domain.ai.relay;
 
+import com.finch.domain.ai.service.WikiThesisService;
 import com.finch.global.security.LoginUser;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +34,7 @@ import tools.jackson.databind.JsonNode;
 public class AiRelayController {
 
 	private final AiRelayService relayService;
+	private final WikiThesisService wikiThesisService;
 
 	@PostMapping("/stocks/{stockCode}/analysis")
 	public ResponseEntity<JsonNode> analysis(@LoginUser long userId, @PathVariable String stockCode,
@@ -82,13 +84,14 @@ public class AiRelayController {
 	 */
 	@PostMapping("/wiki/theses")
 	public ResponseEntity<JsonNode> createThesis(@LoginUser long userId, @RequestBody(required = false) JsonNode body) {
-		return relayService.relay(AiRoute.WIKI_THESIS_CREATE, null, null, userId, body);
+		return wikiThesisService.create(userId, body);
 	}
 
+	/** 논지를 쓰는 두 경로는 {@link WikiThesisService} 를 지난다 — 성공하면 알림함이 쓰는 논지 캐시를 지운다 (apiSpec 6.4). */
 	@PutMapping("/wiki/theses/{stockCode}")
 	public ResponseEntity<JsonNode> updateThesis(@LoginUser long userId, @PathVariable String stockCode,
 		@RequestBody(required = false) JsonNode body) {
-		return relayService.relay(AiRoute.WIKI_THESIS_UPDATE, Map.of("ticker", stockCode), null, userId, body);
+		return wikiThesisService.update(userId, stockCode, body);
 	}
 
 	@DeleteMapping("/wiki/facts/{factId}")
