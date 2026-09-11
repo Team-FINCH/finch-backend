@@ -18,6 +18,7 @@ import com.finch.domain.ai.exception.AiErrorCode;
 import com.finch.domain.ai.relay.AiRelayController;
 import com.finch.domain.ai.relay.AiRelayService;
 import com.finch.domain.ai.relay.AiRoute;
+import com.finch.domain.ai.service.WikiThesisService;
 import com.finch.global.config.SecurityConfig;
 import com.finch.global.exception.AiRelayException;
 import com.finch.global.exception.CustomException;
@@ -57,6 +58,10 @@ class AiRelayControllerTest {
 	@MockitoBean
 	private AiRelayService relayService;
 
+	/** 논지를 쓰는 두 경로(POST·PUT)는 이 서비스를 지난다 — 중계 뒤에 알림함의 논지 캐시를 지운다. */
+	@MockitoBean
+	private WikiThesisService wikiThesisService;
+
 	@MockitoBean
 	private JwtProvider jwtProvider;
 
@@ -85,6 +90,8 @@ class AiRelayControllerTest {
 		givenLoggedIn(42L);
 		given(relayService.relay(any(), any(), any(), eq(42L), any()))
 			.willReturn(ResponseEntity.ok(mapper.readTree("{\"content\":{}}")));
+		given(wikiThesisService.update(eq(42L), eq("005930"), any()))
+			.willReturn(ResponseEntity.ok(mapper.readTree("{\"content\":{}}")));
 
 		mockMvc.perform(authed(post("/api/v1/ai/chat")).contentType(MediaType.APPLICATION_JSON).content("{\"message\":\"hi\"}"))
 			.andExpect(status().isOk());
@@ -110,16 +117,16 @@ class AiRelayControllerTest {
 		org.assertj.core.api.Assertions.assertThat(query.getValue().getFirst("date")).isEqualTo("2026-09-07");
 		verify(relayService).relay(eq(AiRoute.FEEDBACK), isNull(), isNull(), eq(42L), any());
 		verify(relayService).relay(eq(AiRoute.WIKI), isNull(), any(), eq(42L), isNull());
-		verify(relayService).relay(eq(AiRoute.WIKI_THESIS_UPDATE), eq(Map.of("ticker", "005930")), isNull(), eq(42L), any());
+		verify(wikiThesisService).update(eq(42L), eq("005930"), any());
 		verify(relayService).relay(eq(AiRoute.WIKI_FACT_DELETE), eq(Map.of("factId", "f1")), isNull(), eq(42L), isNull());
 	}
 
 	/** apiSpec 10.1 (v0.8.8, 이슈 #56) — 매수 이유를 처음 적는 경로. 경로 변수가 없고 종목은 본문의 ticker 다. */
 	@Test
-	@DisplayName("POST /ai/wiki/theses — 경로 변수 없이 본문을 그대로 WIKI_THESIS_CREATE 로 넘긴다")
+	@DisplayName("POST /ai/wiki/theses — 경로 변수 없이 본문을 그대로 논지 서비스로 넘긴다")
 	void createThesis() throws Exception {
 		givenLoggedIn(42L);
-		given(relayService.relay(eq(AiRoute.WIKI_THESIS_CREATE), isNull(), isNull(), eq(42L), any()))
+		given(wikiThesisService.create(eq(42L), any()))
 			.willReturn(ResponseEntity.ok(mapper.readTree(
 				"{\"content\":{\"ticker\":\"000660\",\"status\":\"active\"},\"requestId\":\"r1\"}")));
 
@@ -130,7 +137,7 @@ class AiRelayControllerTest {
 			.andExpect(jsonPath("$.content.status").value("active"));
 
 		ArgumentCaptor<JsonNode> body = ArgumentCaptor.forClass(JsonNode.class);
-		verify(relayService).relay(eq(AiRoute.WIKI_THESIS_CREATE), isNull(), isNull(), eq(42L), body.capture());
+		verify(wikiThesisService).create(eq(42L), body.capture());
 		org.assertj.core.api.Assertions.assertThat(body.getValue().get("ticker").asString()).isEqualTo("000660");
 		org.assertj.core.api.Assertions.assertThat(body.getValue().get("linkedTradeId").asString()).isEqualTo("101");
 	}
