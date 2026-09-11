@@ -83,6 +83,13 @@ class SecurityWhitelistTest {
 		mockMvc.perform(post("/api/v1/auth/refresh")).andExpect(status().isOk());
 	}
 
+	/** 로그인 전이라 토큰이 없다. 판정은 X-Test-Login-Key 가 하고, 설정이 꺼져 있으면 컨트롤러가 없어 404 다 (apiSpec 2.5). */
+	@Test
+	@DisplayName("테스트 로그인은 무인증이다 — 로그인 전이라 토큰이 있을 수 없다")
+	void testLoginIsPermitted() throws Exception {
+		mockMvc.perform(post("/api/v1/auth/test-login")).andExpect(status().isOk());
+	}
+
 	/** 카카오가 브라우저를 리다이렉트하는 콜백이라 토큰을 붙일 수 없다. 막히면 결제창을 마친 사용자가 401 JSON 을 본다. */
 	@Test
 	@DisplayName("카카오 승인 콜백은 무인증이다 — 브라우저 리다이렉트라 토큰이 없다")
@@ -133,7 +140,7 @@ class SecurityWhitelistTest {
 		void open() {
 		}
 
-		@PostMapping({"/api/v1/auth/kakao", "/api/v1/auth/refresh", "/api/v1/auth/logout",
+		@PostMapping({"/api/v1/auth/kakao", "/api/v1/auth/refresh", "/api/v1/auth/test-login", "/api/v1/auth/logout",
 			"/api/v1/deposits/1/mock-approve"})
 		void posted() {
 		}
