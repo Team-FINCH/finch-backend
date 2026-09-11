@@ -3,7 +3,9 @@ package com.finch.domain.price.feed.kis;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finch.TestcontainersConfiguration;
+import com.finch.domain.price.feed.FakeIndexFeed;
 import com.finch.domain.price.feed.FakePriceFeed;
+import com.finch.domain.price.feed.IndexFeed;
 import com.finch.domain.price.feed.PriceFeed;
 import com.finch.domain.stock.port.CandleSourcePort;
 import com.finch.domain.stock.port.EmptyCandleSourcePort;
@@ -27,10 +29,13 @@ class KisProviderWiringTest {
 	private ApplicationContext context;
 
 	@Test
-	@DisplayName("provider=kis 면 KisPollingFeed·KisClient·KisCandleSourceAdapter 가 있고 Fake·빈 포트는 없다")
+	@DisplayName("provider=kis 면 KisPollingFeed·KisIndexFeed·KisClient·KisCandleSourceAdapter 가 있고 Fake·빈 포트는 없다")
 	void wiresKis() {
 		assertThat(context.getBean(PriceFeed.class)).isInstanceOf(KisPollingFeed.class);
 		assertThat(context.getBeanNamesForType(FakePriceFeed.class)).isEmpty();
+		assertThat(context.getBean(IndexFeed.class)).isInstanceOf(KisIndexFeed.class);
+		assertThat(context.getBeanNamesForType(FakeIndexFeed.class)).isEmpty();
+		assertThat(context.getBean(KisIndexFeed.class).isRunning()).isFalse();
 		assertThat(context.getBean(CandleSourcePort.class)).isInstanceOf(KisCandleSourceAdapter.class);
 		assertThat(context.getBeanNamesForType(EmptyCandleSourcePort.class)).isEmpty();
 		assertThat(context.getBean(KisKeyPool.class).size()).isEqualTo(1);

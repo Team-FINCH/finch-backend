@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finch.TestcontainersConfiguration;
 import com.finch.domain.price.feed.kis.KisClient;
+import com.finch.domain.price.feed.kis.KisIndexFeed;
 import com.finch.domain.price.feed.kis.KisPollingFeed;
 import com.finch.domain.stock.port.CandleSourcePort;
 import com.finch.domain.stock.port.EmptyCandleSourcePort;
@@ -23,10 +24,12 @@ class FakeProviderWiringTest {
 	private ApplicationContext context;
 
 	@Test
-	@DisplayName("provider=fake 면 FakePriceFeed 와 빈 일봉 포트뿐이고 KIS 빈은 없다")
+	@DisplayName("provider=fake 면 FakePriceFeed·FakeIndexFeed 와 빈 일봉 포트뿐이고 KIS 빈은 없다")
 	void wiresFake() {
 		assertThat(context.getBean(PriceFeed.class)).isInstanceOf(FakePriceFeed.class);
+		assertThat(context.getBean(IndexFeed.class)).isInstanceOf(FakeIndexFeed.class);
 		assertThat(context.getBeanNamesForType(KisPollingFeed.class)).isEmpty();
+		assertThat(context.getBeanNamesForType(KisIndexFeed.class)).isEmpty();
 		assertThat(context.getBeanNamesForType(KisClient.class)).isEmpty();
 		assertThat(context.getBean(CandleSourcePort.class)).isInstanceOf(EmptyCandleSourcePort.class);
 	}

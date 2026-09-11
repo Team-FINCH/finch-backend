@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finch.TestcontainersConfiguration;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -236,6 +237,80 @@ class KisClientTest {
 			assertThat(candles.getFirst().tradeDate()).isBefore(candles.getLast().tradeDate());
 			assertThat(candles.getLast().tradeDate()).isEqualTo(LocalDate.of(2026, 9, 7));
 			assertThat(candles.getFirst()).isEqualTo(new KisCandle(LocalDate.of(2026, 5, 11), 100, 110, 90, 105, 7));
+		}
+	}
+
+	@Nested
+	@DisplayName("업종 지수")
+	class Index {
+
+		private static final String KOSPI_JSON = """
+			{"rt_cd":"0","msg_cd":"MCA00000","msg1":"정상처리 되었습니다!","output":{"bstp_nmix_prpr":"2600.54",
+			"bstp_nmix_prdy_vrss":"-12.31","prdy_vrss_sign":"5","bstp_nmix_prdy_ctrt":"-0.47"}}""";
+
+		@Test
+		@DisplayName("TR·경로·업종코드로 부르고 현재 지수·부호 붙은 전일 대비를 소수 둘째 자리로 꺼낸다")
+		void parsesIndex() {
+			KisProperties props = props();
+			KisClient client = client(new KisTokenManager(stub(req -> isToken(req) ? json(HttpStatus.OK, TOKEN_JSON)
+				: json(HttpStatus.OK, KOSPI_JSON)), redisTemplate, props), props);
+
+			KisIndexQuote quote = client.indexPrice(key(), "0001");
+
+			assertThat(quote.currentValue()).isEqualByComparingTo("2600.54");
+			assertThat(quote.changeValue()).isEqualByComparingTo("-12.31");
+			assertThat(quote.previousClose()).isEqualByComparingTo("2612.85");
+			ClientRequest call = sent.getLast();
+			assertThat(call.headers().getFirst("tr_id")).isEqualTo(KisClient.TR_INDEX);
+			assertThat(call.url().getPath()).isEqualTo(KisClient.INDEX_PATH);
+			assertThat(call.url().getQuery()).contains("FID_COND_MRKT_DIV_CODE=U").contains("FID_INPUT_ISCD=0001");
+		}
+
+		/** 값 필드에 부호가 붙어 오는지 문서에 없다. 어느 쪽이든 대비부호가 정하게 한다. */
+		@Test
+		@DisplayName("부호는 대비부호가 정한다 — 부호 없는 값에 하락(5)이면 음수, 상승(2)이면 양수, 보합(3)이면 0")
+		void signComesFromSignCode() {
+			assertThat(KisClient.signed(new BigDecimal("12.31"), "5")).isEqualByComparingTo("-12.31");
+			assertThat(KisClient.signed(new BigDecimal("-12.31"), "4")).isEqualByComparingTo("-12.31");
+			assertThat(KisClient.signed(new BigDecimal("-3.10"), "2")).isEqualByComparingTo("3.10");
+			assertThat(KisClient.signed(new BigDecimal("0.00"), "3")).isEqualByComparingTo("0");
+			assertThat(KisClient.signed(new BigDecimal("-1.00"), null)).isEqualByComparingTo("-1.00");
+		}
+
+		@Test
+		@DisplayName("output 이 한 줄짜리 배열로 와도 읽는다")
+		void acceptsArrayOutput() {
+			KisProperties props = props();
+			KisClient client = client(new KisTokenManager(stub(req -> isToken(req) ? json(HttpStatus.OK, TOKEN_JSON)
+				: json(HttpStatus.OK, """
+					{"rt_cd":"0","msg_cd":"MCA00000","msg1":"ok","output":[{"bstp_nmix_prpr":"793.8",
+					"bstp_nmix_prdy_vrss":"0.95","prdy_vrss_sign":"2"}]}""")), redisTemplate, props), props);
+
+			KisIndexQuote quote = client.indexPrice(key(), "1001");
+
+			assertThat(quote.currentValue()).isEqualTo(new BigDecimal("793.80"));
+			assertThat(quote.changeValue()).isEqualByComparingTo("0.95");
+		}
+
+		/** 0 을 캐시에 넣으면 등락률이 −100% 로 나간다. 던져서 공급자가 캐시를 덮지 않게 한다. */
+		@Test
+		@DisplayName("현재 지수가 0 이거나 output 이 없으면 REJECTED")
+		void rejectsZeroOrMissing() {
+			KisProperties props = props();
+			KisClient zero = client(new KisTokenManager(stub(req -> isToken(req) ? json(HttpStatus.OK, TOKEN_JSON)
+				: json(HttpStatus.OK, """
+					{"rt_cd":"0","msg_cd":"MCA00000","msg1":"ok","output":{"bstp_nmix_prpr":"0.00",
+					"bstp_nmix_prdy_vrss":"0.00","prdy_vrss_sign":"3"}}""")), redisTemplate, props), props);
+			assertThatThrownBy(() -> zero.indexPrice(key(), "0001"))
+				.isInstanceOf(KisException.class)
+				.extracting(e -> ((KisException) e).getKind()).isEqualTo(KisException.Kind.REJECTED);
+
+			KisClient empty = client(new KisTokenManager(stub(req -> isToken(req) ? json(HttpStatus.OK, TOKEN_JSON)
+				: json(HttpStatus.OK, """
+					{"rt_cd":"0","msg_cd":"MCA00000","msg1":"ok"}""")), redisTemplate, props), props);
+			assertThatThrownBy(() -> empty.indexPrice(key(), "0001"))
+				.isInstanceOf(KisException.class)
+				.extracting(e -> ((KisException) e).getKind()).isEqualTo(KisException.Kind.REJECTED);
 		}
 	}
 

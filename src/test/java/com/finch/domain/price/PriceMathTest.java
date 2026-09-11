@@ -39,4 +39,20 @@ class PriceMathTest {
 		// 금액은 0 을 기준으로도 뺄 수 있다 — 나눗셈이 없다.
 		assertThat(PriceMath.changeAmount(73_500L, 0L)).isEqualTo(73_500L);
 	}
+
+	/** 지수는 금액이 아니라 소수다 (apiSpec 5.7). 변동폭도 스케일 2 로 나가야 화면이 자릿수를 맞춘다. */
+	@Test
+	@DisplayName("지수 변동폭은 소수 둘째 자리, 등락률은 종목과 같은 규칙이고 기준이 없거나 0 이면 null 이다")
+	void computesIndexChange() {
+		assertThat(PriceMath.indexChange(new BigDecimal("2600.54"), new BigDecimal("2612.85")))
+			.isEqualTo(new BigDecimal("-12.31"));
+		// -12.31 / 2,612.85 × 100 = -0.4711… → -0.47
+		assertThat(PriceMath.indexChangeRate(new BigDecimal("2600.54"), new BigDecimal("2612.85")))
+			.isEqualTo(new BigDecimal("-0.47"));
+		assertThat(PriceMath.indexChange(new BigDecimal("800"), new BigDecimal("800"))).isEqualTo(new BigDecimal("0.00"));
+
+		assertThat(PriceMath.indexChange(new BigDecimal("2600.54"), null)).isNull();
+		assertThat(PriceMath.indexChangeRate(new BigDecimal("2600.54"), null)).isNull();
+		assertThat(PriceMath.indexChangeRate(new BigDecimal("2600.54"), new BigDecimal("0.00"))).isNull();
+	}
 }
