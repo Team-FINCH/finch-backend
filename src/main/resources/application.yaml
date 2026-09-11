@@ -93,6 +93,15 @@ management:
 
 # 우리가 정한 값은 전부 finch.* 아래 둔다 (FinchProperties 주석).
 finch:
+  auth:
+    test-login:
+      # 카카오 없이 테스트 계정(1~10)으로 로그인하는 임시 입구 (apiSpec 2.5). 기본은 꺼짐 — 꺼져 있으면 경로가 없다(404).
+      # 켤 때는 환경변수로만 준다: FINCH_AUTH_TESTLOGIN_ENABLED=true, FINCH_AUTH_TESTLOGIN_KEY=<16자 이상 비밀값>.
+      # 여기에 ${...} 자리표시자를 두지 않는다 — 운영이 "주지 않는 것" 이 기본이라 환경변수 계약 검사가 누락으로 잡는다
+      # (infra/scripts/check-env-contract.py). 스프링은 위 두 이름을 자리표시자 없이도 이 설정에 묶는다.
+      # 키 없이 켜면 기동에 실패한다 (TestLoginService). 발표·평가가 끝나면 끄고 코드를 지운다.
+      enabled: false
+
   account:
     # 계좌 개설 시 지급하는 예수금 (featureSpec 2.2).
     #

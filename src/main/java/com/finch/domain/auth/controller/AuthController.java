@@ -108,7 +108,8 @@ public class AuthController {
 			.build();
 	}
 
-	private ResponseCookie refreshCookie(String refreshToken) {
+	/** 테스트 로그인({@code TestLoginController})도 이 쿠키를 쓴다 — 속성이 하나라도 다르면 재발급·로그아웃이 그 쿠키를 못 알아본다. */
+	static ResponseCookie refreshCookie(String refreshToken) {
 		return ResponseCookie.from(REFRESH_COOKIE_NAME, refreshToken)
 			.httpOnly(true)
 			// 배포는 HTTPS 다. 로컬 http://localhost 는 브라우저가 보안 컨텍스트로 취급해 Secure 쿠키를 그대로 받는다.
