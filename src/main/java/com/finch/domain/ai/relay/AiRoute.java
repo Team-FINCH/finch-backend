@@ -5,11 +5,12 @@ import org.springframework.http.HttpMethod;
 /**
  * apiSpec 10.1 의 경로 매핑 표. 프론트가 부르는 {@code /api/v1/ai/**} 와 AI 서버의 {@code /api/ai/v1/**} 가 짝이다.
  * <p>
- * enum 으로 두는 이유 — 표가 코드 한 곳에 있어야 "중계하는 것 10종" 이 문서와 대조된다 ({@code AiRouteTest}). 컨트롤러의
+ * enum 으로 두는 이유 — 표가 코드 한 곳에 있어야 "중계하는 것 11종" 이 문서와 대조된다 ({@code AiRouteTest}). 컨트롤러의
  * 스프링 매핑은 어노테이션이라 별도로 적을 수밖에 없고, 이 enum 은 <b>AI 쪽 경로</b>를 든다. 경로 변수 이름이 다르다 —
  * 우리는 {@code stockCode}, AI 는 {@code ticker} (contracts C19·C74). 값은 같은 6자리 코드다.
  * <p>
- * {@code POST /api/ai/v1/wiki/theses} 는 AI 가 내부에서 스스로 부르는 경로라 여기 없다 (apiSpec 10.1).
+ * {@code POST /wiki/theses} 는 v0.8.8 부터 중계한다 (apiSpec 10.1, 이슈 #56). 그 전에는 AI 가 대화 안에서 스스로 부르는
+ * 경로라 여기 없었는데, 사용자가 위키 탭·알림함에서 매수 이유를 처음 적는 입구가 필요해졌다 — {@code PUT} 은 논지가 없으면 거부한다.
  */
 public enum AiRoute {
 
@@ -21,6 +22,7 @@ public enum AiRoute {
 	BRIEFING(HttpMethod.GET, "/briefing"),
 	FEEDBACK(HttpMethod.POST, "/feedback"),
 	WIKI(HttpMethod.GET, "/wiki"),
+	WIKI_THESIS_CREATE(HttpMethod.POST, "/wiki/theses"),
 	WIKI_THESIS_UPDATE(HttpMethod.PUT, "/wiki/theses/{ticker}"),
 	WIKI_FACT_DELETE(HttpMethod.DELETE, "/wiki/facts/{factId}");
 

@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.JsonNode;
 
 /**
- * AI 중계 API 10종 (apiSpec 10.1). 한 컨트롤러에 모아 두는 이유 — 전부 같은 일({@link AiRelayService#relay})을 하고 다른 것은
+ * AI 중계 API 11종 (apiSpec 10.1). 한 컨트롤러에 모아 두는 이유 — 전부 같은 일({@link AiRelayService#relay})을 하고 다른 것은
  * 경로와 메서드뿐이다. {@link AiRoute} 가 AI 쪽 경로를, 여기 어노테이션이 우리 쪽 경로를 든다.
  * <p>
  * 본문은 {@link JsonNode} 로 받는다 — 엔드포인트별 DTO 를 두지 않는다 (apiSpec 10.3 "제네릭 변환"). 검증도 하지 않는다: 요청 형식
@@ -74,6 +74,15 @@ public class AiRelayController {
 	@GetMapping("/wiki")
 	public ResponseEntity<JsonNode> wiki(@LoginUser long userId, @RequestParam MultiValueMap<String, String> query) {
 		return relayService.relay(AiRoute.WIKI, null, query, userId, null);
+	}
+
+	/**
+	 * 논지 새로 기록 (apiSpec 10.1, v0.8.8). 경로 변수가 없고 종목은 본문의 {@code ticker} 다. 같은 종목의 {@code active} 논지는
+	 * AI 가 {@code closed} 로 닫는다(교체) — 우리는 본문을 그대로 넘길 뿐 논지 유무를 먼저 보지 않는다.
+	 */
+	@PostMapping("/wiki/theses")
+	public ResponseEntity<JsonNode> createThesis(@LoginUser long userId, @RequestBody(required = false) JsonNode body) {
+		return relayService.relay(AiRoute.WIKI_THESIS_CREATE, null, null, userId, body);
 	}
 
 	@PutMapping("/wiki/theses/{stockCode}")
