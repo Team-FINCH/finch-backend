@@ -22,7 +22,6 @@ backend:test:
     key:
       files:
         - backend/build.gradle
-        - backend/settings.gradle
         - backend/gradle/wrapper/gradle-wrapper.properties
     paths:
       - .gradle/caches
