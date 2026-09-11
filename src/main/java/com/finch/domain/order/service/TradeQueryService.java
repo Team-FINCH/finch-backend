@@ -1,6 +1,7 @@
 package com.finch.domain.order.service;
 
 import com.finch.domain.account.service.AccountService;
+import com.finch.domain.order.dto.response.LastBuyRes;
 import com.finch.domain.order.dto.response.TradeSummaryRes;
 import com.finch.domain.order.repository.TradeRepository;
 import com.finch.global.paging.CursorCodec;
@@ -40,5 +41,15 @@ public class TradeQueryService {
 			.findByAccountIdAndIdLessThanOrderByIdDesc(accountId, before, PageRequest.of(0, size + 1))
 			.stream().map(TradeSummaryRes::from).toList();
 		return CursorPage.of(rows, size, TradeSummaryRes::tradeId, cursorCodec);
+	}
+
+	/**
+	 * 종목별 마지막 매수 (알림함 apiSpec 6.4). 알림함의 "왜 담으셨나요?" 가 어느 매수에서 나온 질문인지 정한다 — 같은 종목을 다시 사면
+	 * 이 값이 바뀌어 새 항목이 된다. 사용자가 매수한 적 있는 종목 전부가 담기고, 보유 중인지는 보지 않는다(호출자가 거른다).
+	 */
+	@Transactional(readOnly = true)
+	public List<LastBuyRes> lastBuys(Long userId) {
+		Long accountId = accountService.getBalance(userId).accountId();
+		return tradeRepository.findLastBuys(accountId).stream().map(LastBuyRes::from).toList();
 	}
 }

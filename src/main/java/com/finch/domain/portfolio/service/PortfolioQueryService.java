@@ -3,7 +3,9 @@ package com.finch.domain.portfolio.service;
 import com.finch.domain.account.dto.response.AccountBalanceRes;
 import com.finch.domain.account.service.AccountService;
 import com.finch.domain.portfolio.dto.request.PortfolioSort;
+import com.finch.domain.portfolio.dto.response.HeldStockRes;
 import com.finch.domain.portfolio.dto.response.PortfolioRes;
+import com.finch.domain.portfolio.repository.HoldingRepository;
 import com.finch.domain.portfolio.service.HoldingValuationService.PricedHoldings;
 import java.util.Comparator;
 import java.util.List;
@@ -35,6 +37,7 @@ public class PortfolioQueryService {
 
 	private final AccountService accountService;
 	private final HoldingValuationService holdingValuationService;
+	private final HoldingRepository holdingRepository;
 
 	/**
 	 * 상단 요약(예수금·평가금액·총자산)과 보유 목록을 함께 돌려준다. 한 화면이 두 API 를 부르면 두 응답 사이에 시세가 바뀌어
@@ -50,5 +53,19 @@ public class PortfolioQueryService {
 		List<PortfolioRes.Holding> holdings =
 			priced.sortedBy(sort == PortfolioSort.PROFIT_RATE ? BY_PROFIT_RATE : BY_EVALUATION);
 		return PortfolioRes.of(balance.cashBalance(), priced.evaluationAmount(), priced.asOf(), holdings);
+	}
+
+	/**
+	 * 보유 종목의 코드와 이름만 ({@code quantity > 0}). 알림함이 "논지 없는 보유 종목" 을 셀 때 쓴다 (apiSpec 6.4).
+	 * <p>
+	 * {@link #list} 를 쓰지 않는 이유 — 그쪽은 종목마다 시세 캐시를 읽고 평가금액을 계산한다. 알림함 뱃지는 홈·포트폴리오·내 정보
+	 * 헤더에서 불리는데, 거기에 필요 없는 평가를 매번 얹을 이유가 없다.
+	 */
+	@Transactional(readOnly = true)
+	public List<HeldStockRes> heldStocks(Long userId) {
+		Long accountId = accountService.getBalance(userId).accountId();
+		return holdingRepository.findHeld(accountId).stream()
+			.map(row -> new HeldStockRes(row.getStockCode(), row.getStockName()))
+			.toList();
 	}
 }
