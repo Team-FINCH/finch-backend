@@ -1,5 +1,6 @@
 package com.finch.domain.withdrawal.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.finch.domain.withdrawal.dto.request.WithdrawalReq;
 import com.finch.domain.withdrawal.dto.response.WithdrawalRes;
 import com.finch.domain.withdrawal.service.WithdrawalService;
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/withdrawals")
 @RequiredArgsConstructor
+@Tag(name = "출금", description = "예수금 출금")
 public class WithdrawalController {
 
 	private final WithdrawalService withdrawalService;

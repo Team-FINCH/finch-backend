@@ -40,6 +40,11 @@ public class SecurityConfig {
 		// 헤더를 붙일 방법이 없다. 열어도 안전한 이유: 이 호출은 결제 건을 APPROVED 로 표시할 뿐 돈을 움직이지 않고,
 		// 위조에 필요한 pg_token 은 카카오가 검증한다. 원장 반영은 JWT 가 있는 POST /deposits/confirm 뿐이다.
 		"/api/v1/deposits/kakao/approval",
+		// Swagger UI 와 OpenAPI 원문. 공개 API 계약을 팀과 프론트가 인증 전에도 확인할 수 있어야 한다.
+		// 내부 API 는 OpenApiConfig 의 pathsToMatch 에서 제외하므로 이 경로로 노출되지 않는다.
+		"/swagger-ui/**",
+		"/swagger-ui.html",
+		"/v3/api-docs/**",
 		"/actuator/health/**",
 		"/actuator/prometheus",
 	};

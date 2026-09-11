@@ -1,5 +1,6 @@
 package com.finch.domain.auth.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.finch.domain.auth.dto.response.UserMeRes;
 import com.finch.domain.auth.service.UserService;
 import com.finch.global.security.LoginUser;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/users")
 @RequiredArgsConstructor
+@Tag(name = "사용자", description = "로그인 사용자 정보")
 public class UserController {
 
 	private final UserService userService;

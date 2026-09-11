@@ -65,6 +65,13 @@ class SecurityWhitelistTest {
 	}
 
 	@Test
+	@DisplayName("Swagger UI와 OpenAPI 문서는 인증 없이 열려 있다")
+	void apiDocumentationPathsArePermitted() throws Exception {
+		mockMvc.perform(get("/swagger-ui.html")).andExpect(status().isOk());
+		mockMvc.perform(get("/v3/api-docs")).andExpect(status().isOk());
+	}
+
+	@Test
 	@DisplayName("카카오 로그인은 무인증이다 — 로그인 전이라 토큰이 있을 수 없다")
 	void kakaoLoginIsPermitted() throws Exception {
 		mockMvc.perform(post("/api/v1/auth/kakao")).andExpect(status().isOk());
@@ -121,7 +128,8 @@ class SecurityWhitelistTest {
 	static class StubController {
 
 		@GetMapping({"/actuator/health", "/actuator/health/readiness", "/actuator/health/liveness",
-			"/actuator/prometheus", "/api/v1/anything", "/api/v1/deposits/kakao/approval"})
+			"/actuator/prometheus", "/swagger-ui.html", "/v3/api-docs", "/api/v1/anything",
+			"/api/v1/deposits/kakao/approval"})
 		void open() {
 		}
 

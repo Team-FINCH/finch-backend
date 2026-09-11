@@ -1,5 +1,6 @@
 package com.finch.domain.watchlist.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.finch.domain.watchlist.dto.request.WatchlistCreateReq;
 import com.finch.domain.watchlist.dto.request.WatchlistSort;
 import com.finch.domain.watchlist.dto.response.WatchlistRes;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/watchlist")
 @RequiredArgsConstructor
+@Tag(name = "관심 종목", description = "관심 종목 조회와 관리")
 public class WatchlistController {
 
 	private final WatchlistService watchlistService;

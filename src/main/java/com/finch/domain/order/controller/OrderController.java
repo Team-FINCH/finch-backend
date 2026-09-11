@@ -1,5 +1,6 @@
 package com.finch.domain.order.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.finch.domain.order.dto.request.OrderReq;
 import com.finch.domain.order.dto.response.OrderAvailableRes;
 import com.finch.domain.order.dto.response.OrderRes;
@@ -30,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/orders")
 @RequiredArgsConstructor
+@Tag(name = "주문", description = "매수·매도 주문과 주문 가능 수량")
 public class OrderController {
 
 	private final OrderService orderService;

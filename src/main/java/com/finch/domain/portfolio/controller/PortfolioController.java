@@ -1,5 +1,6 @@
 package com.finch.domain.portfolio.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.finch.domain.portfolio.dto.request.PortfolioSort;
 import com.finch.domain.portfolio.dto.response.PortfolioRes;
 import com.finch.domain.portfolio.service.PortfolioQueryService;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/portfolio")
 @RequiredArgsConstructor
+@Tag(name = "포트폴리오", description = "보유 종목과 자산 평가")
 public class PortfolioController {
 
 	private final PortfolioQueryService portfolioQueryService;
