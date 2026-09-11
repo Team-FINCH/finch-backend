@@ -65,6 +65,22 @@ class AuthServiceTest {
 			jwtProvider, refreshTokenStore);
 	}
 
+	/** 테스트 로그인(apiSpec 2.5)이 쓰는 뒤쪽 절반. 카카오를 부르지 않고, 조회·가입·토큰·Refresh 저장은 카카오 로그인과 같다. */
+	@Test
+	@DisplayName("loginAs 는 카카오를 부르지 않고 같은 조립으로 토큰을 발급·저장한다")
+	void loginAsSkipsKakao() {
+		KakaoUser testUser = new KakaoUser(-1L, "테스트 사용자 1", null);
+		given(userRepository.findByKakaoId(-1L)).willReturn(Optional.empty());
+		given(userRegistrationService.register(testUser)).willReturn(userWithId(5L, "테스트 사용자 1"));
+
+		LoginResult result = authService.loginAs(testUser);
+
+		verifyNoInteractions(kakaoOAuthClient);
+		assertThat(result.body().isNewUser()).isTrue();
+		assertThat(jwtProvider.parseAccessToken(result.body().accessToken())).isEqualTo(5L);
+		verify(refreshTokenStore).save(5L, result.refreshToken());
+	}
+
 	@Test
 	@DisplayName("처음 보는 kakaoId 면 계정을 만들고 isNewUser 가 true 다")
 	void registersOnFirstLogin() {

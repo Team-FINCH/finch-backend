@@ -49,7 +49,16 @@ public class AuthService {
 
 	public LoginResult loginWithKakao(KakaoLoginReq request) {
 		KakaoUser kakaoUser = kakaoOAuthClient.fetchUser(request.authorizationCode(), request.redirectUri());
+		return loginAs(kakaoUser);
+	}
 
+	/**
+	 * 신원이 확인된 뒤의 절반 — 회원 조회·가입 → 계좌 보정 → 토큰 발급. 카카오 로그인과 테스트 로그인({@link TestLoginService})이
+	 * 같은 경로를 타게 하려고 뗐다. 테스트 로그인이 토큰을 따로 만들면 Refresh 저장·회전·로그아웃이 그쪽에서만 어긋난다.
+	 * <p>
+	 * <b>패키지 밖에 열지 않는다.</b> 이 메서드는 신원을 검증하지 않는다 — 부르는 쪽이 이미 확인했다고 믿는다.
+	 */
+	LoginResult loginAs(KakaoUser kakaoUser) {
 		Resolved resolved = userRepository.findByKakaoId(kakaoUser.kakaoId())
 			.map(existing -> new Resolved(updateProfile(existing, kakaoUser), false))
 			.orElseGet(() -> register(kakaoUser));
