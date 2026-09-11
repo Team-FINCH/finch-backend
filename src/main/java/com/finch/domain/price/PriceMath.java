@@ -30,4 +30,22 @@ public final class PriceMath {
 			.multiply(HUNDRED)
 			.divide(BigDecimal.valueOf(previousClose), 2, RoundingMode.HALF_UP);
 	}
+
+	/** 지수 변동폭 (apiSpec 5.7). 지수는 금액이 아니라 소수 둘째 자리까지다. 기준을 모르면 null. */
+	public static BigDecimal indexChange(BigDecimal currentValue, BigDecimal previousClose) {
+		if (previousClose == null) {
+			return null;
+		}
+		return currentValue.subtract(previousClose).setScale(2, RoundingMode.HALF_UP);
+	}
+
+	/** 지수 등락률. 규칙은 {@link #changeRate} 와 같다 — 기준이 없거나 0 이면 null, 소수 둘째 자리 HALF_UP. */
+	public static BigDecimal indexChangeRate(BigDecimal currentValue, BigDecimal previousClose) {
+		if (previousClose == null || previousClose.signum() == 0) {
+			return null;
+		}
+		return currentValue.subtract(previousClose)
+			.multiply(HUNDRED)
+			.divide(previousClose, 2, RoundingMode.HALF_UP);
+	}
 }

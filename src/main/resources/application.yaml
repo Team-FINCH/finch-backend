@@ -166,6 +166,11 @@ finch:
       base-price: 50000
       max-move-rate: 0.005
       min-price: 100
+    index:
+      # 시장 지수(KOSPI·KOSDAQ, apiSpec 5.7). 관심 신호와 무관하게 공급자가 이 주기로 두 지수를 채운다 — KIS 호출은 주기당 2회다.
+      poll-interval: 10s
+      # 지수의 stale 판정 시간. poll-interval 보다 길어야 한다 — 종목 시세의 관계식 3 과 같은 이유다.
+      stale-after: 60s
 
   kis:
     # KIS 실공급자 (S10). finch.price.provider=kis 일 때만 쓰인다.

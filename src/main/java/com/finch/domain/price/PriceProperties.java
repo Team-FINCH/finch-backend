@@ -14,14 +14,29 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param interestTtl 관심 신호의 수명 (apiSpec 5.6 폴링 티어 TTL 30초). 이 시간 안에 다시 묻지 않으면 공급자가 그 종목을
  *                    더 채우지 않는다. 관계식 1 — 프론트 폴링 주기(권장 3~5초)의 4~6배라야 슬롯이 플래핑하지 않는다.
  * @param fake        Fake 공급자 설정. {@code provider=kis} 면 쓰이지 않는다.
+ * @param index       시장 지수 설정 (apiSpec 5.7). 공급자가 fake 든 kis 든 쓰인다.
  */
 @ConfigurationProperties("finch.price")
 public record PriceProperties(
 	@DefaultValue("fake") String provider,
 	@DefaultValue("10s") Duration staleAfter,
 	@DefaultValue("30s") Duration interestTtl,
-	@DefaultValue Fake fake
+	@DefaultValue Fake fake,
+	@DefaultValue Index index
 ) {
+
+	/**
+	 * 시장 지수 (apiSpec 5.7). 종목 시세와 판정 시간이 다르다 — 지수는 관심 신호 없이 상시로 채우고 주기가 더 길다.
+	 *
+	 * @param pollInterval 공급자가 두 지수를 채우는 주기. 지수 두 개라 KIS 호출은 주기당 2회다.
+	 * @param staleAfter   마지막 수신에서 이 시간이 지나면 {@code stale: true} 다. {@code poll-interval} 보다 길어야 한다 —
+	 *                     종목 시세의 관계식 3(apiSpec 5.6)과 같은 이유로, 짧으면 지수가 상시 "지연" 으로 표시된다.
+	 */
+	public record Index(
+		@DefaultValue("10s") Duration pollInterval,
+		@DefaultValue("60s") Duration staleAfter
+	) {
+	}
 
 	/**
 	 * @param autoStart    기동과 함께 틱을 돌린다. <b>테스트는 false</b> 다 — 배경 스레드가 캐시를 계속 흔들면 stale 판정처럼

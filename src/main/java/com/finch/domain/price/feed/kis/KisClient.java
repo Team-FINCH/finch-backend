@@ -1,9 +1,12 @@
 package com.finch.domain.price.feed.kis;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -23,7 +26,8 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * KIS REST 를 부르는 유일한 지점. 현재가({@code FHKST01010100})와 기간별시세({@code FHKST03010100}) 둘이다.
+ * KIS REST 를 부르는 유일한 지점. 현재가({@code FHKST01010100}) · 기간별시세({@code FHKST03010100}) ·
+ * 업종 현재지수({@code FHPUP02100000}) 셋이다.
  * <p>
  * <b>모든 호출은 키를 받는다.</b> 어느 키로 부를지는 호출자({@link KisKeyPool})가 정하고, 여기서는 그 키의 토큰·리미터·메트릭을 쓴다.
  * 키마다 {@link KisRateLimiter} 가 따로 있어 풀의 키가 늘면 초당 수용량이 키 수만큼 는다.
@@ -44,6 +48,8 @@ public class KisClient {
 	static final String CANDLE_PATH = "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice";
 	static final String TR_PRICE = "FHKST01010100";
 	static final String TR_CANDLE = "FHKST03010100";
+	static final String INDEX_PATH = "/uapi/domestic-stock/v1/quotations/inquire-index-price";
+	static final String TR_INDEX = "FHPUP02100000";
 	private static final DateTimeFormatter KIS_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
 	private static final Duration DEFAULT_RETRY_AFTER = Duration.ofSeconds(1);
 	/** 기간별시세는 한 번에 최대 100 봉이다. 1년(약 245 영업일)은 창을 옮겨 가며 세 번 부른다. */
@@ -86,6 +92,42 @@ public class KisClient {
 		return new KisQuote(parseLong(out.currentPrice()), parseLongOrNull(out.basePrice()), suspended,
 			statusReason(out.statusCode()), parseLongOrNull(out.sessionOpen()), parseLongOrNull(out.sessionHigh()),
 			parseLongOrNull(out.sessionLow()), parseVolumeOrNull(out.sessionVolume()));
+	}
+
+	/**
+	 * 업종 현재지수 (apiSpec 5.7). {@code indexCode} 는 KIS 업종코드다 — KOSPI {@code 0001}, KOSDAQ {@code 1001}.
+	 * <p>
+	 * <b>변동폭의 부호는 대비부호({@code prdy_vrss_sign})로 정한다.</b> 값 필드에 부호가 붙어 오는지 문서에 적혀 있지 않아서,
+	 * 절댓값을 취한 뒤 부호 코드로 다시 붙인다 — 어느 쪽으로 오든 결과가 같다. 부호 코드가 없으면 값에 붙어 온 부호를 그대로 믿는다.
+	 * <p>
+	 * 현재 지수가 없거나 0 이면 {@link KisException.Kind#REJECTED} 다. 0 은 지수가 아니라 "아직 없다" 이고, 그대로 캐시에 넣으면
+	 * 등락률이 −100% 로 나간다. 던지면 공급자가 캐시를 덮지 않아 마지막 값이 남는다.
+	 * <p>
+	 * {@code output} 이 객체로 오는지 한 줄짜리 배열로 오는지 KIS 공식 예제도 둘 다 받아 준다. 여기서도 둘 다 받는다.
+	 */
+	public KisIndexQuote indexPrice(KisCredential key, String indexCode) {
+		IndexRes res = call(key, "index", TR_INDEX, INDEX_PATH,
+			Map.of("FID_COND_MRKT_DIV_CODE", "U", "FID_INPUT_ISCD", indexCode), IndexRes.class);
+		IndexOutput out = res.output() == null || res.output().isEmpty() ? null : res.output().getFirst();
+		BigDecimal current = out == null ? null : parseDecimalOrNull(out.currentValue());
+		BigDecimal change = out == null ? null : parseDecimalOrNull(out.changeValue());
+		if (current == null || current.signum() <= 0 || change == null) {
+			throw new KisException(KisException.Kind.REJECTED, "KIS 지수 응답에 값이 없다 index=" + indexCode);
+		}
+		return new KisIndexQuote(current, signed(change, out.changeSign()));
+	}
+
+	/** 대비부호 1·2 상승, 3 보합, 4·5 하락 (KIS 공통 코드). 모르는 코드면 값의 부호를 그대로 둔다. */
+	static BigDecimal signed(BigDecimal value, String sign) {
+		if (sign == null) {
+			return value;
+		}
+		return switch (sign.trim()) {
+			case "1", "2" -> value.abs();
+			case "3" -> BigDecimal.ZERO.setScale(value.scale());
+			case "4", "5" -> value.abs().negate();
+			default -> value;
+		};
 	}
 
 	/**
@@ -284,6 +326,18 @@ public class KisClient {
 		return parsed > 0 ? parsed : null;
 	}
 
+	/** 지수는 소수다. 둘째 자리로 맞춘다 — 응답이 {@code 2600.5} 로 와도 {@code 2600.50} 으로 나간다. */
+	private static BigDecimal parseDecimalOrNull(String value) {
+		if (value == null || value.isBlank()) {
+			return null;
+		}
+		try {
+			return new BigDecimal(value.trim()).setScale(2, RoundingMode.HALF_UP);
+		} catch (NumberFormatException e) {
+			return null;
+		}
+	}
+
 	private record Raw(int status, String retryAfter, String body, String rtCd, String msgCd, String msg1) {
 	}
 
@@ -315,6 +369,20 @@ public class KisClient {
 		@JsonProperty("temp_stop_yn") String tempStop, @JsonProperty("iscd_stat_cls_code") String statusCode,
 		@JsonProperty("stck_oprc") String sessionOpen, @JsonProperty("stck_hgpr") String sessionHigh,
 		@JsonProperty("stck_lwpr") String sessionLow, @JsonProperty("acml_vol") String sessionVolume) {
+	}
+
+	/** {@code output} 이 객체든 배열이든 목록으로 받는다 ({@link #indexPrice} 주석). */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	record IndexRes(@JsonProperty("rt_cd") String rtCd, @JsonProperty("msg_cd") String msgCd,
+		@JsonProperty("msg1") String msg1,
+		@JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<IndexOutput> output)
+		implements KisEnvelope {
+	}
+
+	/** 업종 현재지수 output 중 쓰는 필드. 지수 현재가·전일 대비·대비부호. */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	record IndexOutput(@JsonProperty("bstp_nmix_prpr") String currentValue,
+		@JsonProperty("bstp_nmix_prdy_vrss") String changeValue, @JsonProperty("prdy_vrss_sign") String changeSign) {
 	}
 
 	@JsonIgnoreProperties(ignoreUnknown = true)
