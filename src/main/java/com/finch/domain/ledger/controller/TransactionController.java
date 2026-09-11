@@ -1,5 +1,6 @@
 package com.finch.domain.ledger.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.finch.domain.ledger.dto.request.TransactionFilter;
 import com.finch.domain.ledger.dto.response.TransactionRes;
 import com.finch.domain.ledger.service.TransactionQueryService;
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/transactions")
 @RequiredArgsConstructor
+@Tag(name = "거래 내역", description = "원장 기반 거래 내역 조회")
 public class TransactionController {
 
 	private final TransactionQueryService transactionQueryService;

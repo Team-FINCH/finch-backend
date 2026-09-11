@@ -1,5 +1,6 @@
 package com.finch.domain.price.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.finch.domain.price.dto.response.PricesRes;
 import com.finch.domain.stock.port.PriceQueryPort;
 import com.finch.domain.stock.port.PriceQueryPort.PriceSnapshot;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/stocks")
 @RequiredArgsConstructor
+@Tag(name = "시세", description = "관심 종목 실시간 시세")
 public class PriceController {
 
 	/** apiSpec 5.5 — 관심 종목 최대 50개와 맞춘 값이다. KIS 실시간 등록 한도와는 무관하다(수집 계층이 흡수한다). */

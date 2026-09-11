@@ -8,8 +8,12 @@ import com.finch.domain.auth.service.AuthService;
 import com.finch.domain.auth.service.LoginResult;
 import com.finch.domain.auth.service.TokenPair;
 import com.finch.global.exception.CustomException;
+import com.finch.global.config.OpenApiConfig;
 import com.finch.global.security.JwtProvider;
 import com.finch.global.security.LoginUser;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -25,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
+@Tag(name = "인증", description = "카카오 로그인, 토큰 재발급, 로그아웃")
 public class AuthController {
 
 	/**
@@ -44,6 +49,7 @@ public class AuthController {
 	 * 그래서 XSS 로 새지 않는다.
 	 */
 	@PostMapping("/kakao")
+	@SecurityRequirements
 	public ResponseEntity<KakaoLoginRes> loginWithKakao(@Valid @RequestBody KakaoLoginReq request) {
 		LoginResult result = authService.loginWithKakao(request);
 
@@ -59,6 +65,7 @@ public class AuthController {
 	 * 부르는데, 최초 방문자(쿠키 없음)에게 무효와 같은 코드를 주면 로그인 화면으로 튕긴다 (apiSpec 2.2).
 	 */
 	@PostMapping("/refresh")
+	@SecurityRequirement(name = OpenApiConfig.REFRESH_COOKIE)
 	public ResponseEntity<TokenRes> refresh(
 		@CookieValue(name = REFRESH_COOKIE_NAME, required = false) String refreshToken) {
 		if (refreshToken == null || refreshToken.isBlank()) {

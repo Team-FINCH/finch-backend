@@ -1,5 +1,6 @@
 package com.finch.domain.price.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.finch.domain.price.dto.response.MarketIndicesRes;
 import com.finch.domain.price.service.IndexQueryService;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/market")
 @RequiredArgsConstructor
+@Tag(name = "시장", description = "KOSPI·KOSDAQ 시장 지수")
 public class MarketIndexController {
 
 	private final IndexQueryService indexQueryService;

@@ -55,6 +55,22 @@ class SecurityConfigTest {
 		assertThat(statusOf("/actuator/prometheus")).isEqualTo(HttpStatus.OK);
 	}
 
+	@Test
+	@DisplayName("OpenAPI 문서는 인증 없이 열리고 내부 API를 노출하지 않는다")
+	void publicOpenApiIsOpenWithoutInternalEndpoints() {
+		String document = client.get().uri("/v3/api-docs").retrieve().body(String.class);
+
+		assertThat(document)
+			.contains("/api/v1/auth/kakao")
+			.doesNotContain("/internal/v1/portfolio");
+	}
+
+	@Test
+	@DisplayName("Swagger UI 진입점은 인증 없이 열린다")
+	void swaggerUiIsOpen() {
+		assertThat(statusOf("/swagger-ui.html").is3xxRedirection()).isTrue();
+	}
+
 	/**
 	 * 위 세 개의 반대쪽. `permitAll()` 을 걷어낸 것이 실제로 효력이 있는지 본다 —
 	 * 이 테스트가 200 으로 실패하면 화이트리스트가 아니라 <b>전 경로가 열려 있는</b> 것이다.

@@ -8,6 +8,7 @@ import com.finch.domain.stock.dto.response.StockPriceRes;
 import com.finch.domain.stock.dto.response.StockSearchRes;
 import com.finch.domain.stock.service.StockService;
 import com.finch.global.security.LoginUser;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
@@ -31,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/stocks")
 @RequiredArgsConstructor
+@Tag(name = "종목", description = "종목 검색, 상세, 현재가와 캔들")
 public class StockController {
 
 	private static final int SEARCH_DEFAULT_SIZE = 10;

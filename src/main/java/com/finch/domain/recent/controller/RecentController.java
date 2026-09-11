@@ -1,5 +1,6 @@
 package com.finch.domain.recent.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.finch.domain.recent.dto.response.RecentSearchRes;
 import com.finch.domain.recent.dto.response.RecentViewedRes;
 import com.finch.domain.recent.service.RecentSearchService;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/stocks")
 @RequiredArgsConstructor
+@Tag(name = "최근 기록", description = "최근 본 종목과 최근 검색어")
 public class RecentController {
 
 	private final RecentViewedService recentViewedService;

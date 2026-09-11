@@ -2,6 +2,7 @@ package com.finch.domain.ai.relay;
 
 import com.finch.domain.ai.service.WikiThesisService;
 import com.finch.global.security.LoginUser;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -31,6 +32,7 @@ import tools.jackson.databind.JsonNode;
 @RestController
 @RequestMapping("/api/v1/ai")
 @RequiredArgsConstructor
+@Tag(name = "AI 투자 비서", description = "종목 분석, 포트폴리오 진단, 브리핑과 투자 위키")
 public class AiRelayController {
 
 	private final AiRelayService relayService;

@@ -10,6 +10,8 @@ import com.finch.domain.deposit.dto.response.DepositReadyRes;
 import com.finch.domain.deposit.dto.response.MockApproveRes;
 import com.finch.domain.deposit.service.DepositService;
 import com.finch.global.security.LoginUser;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.net.URI;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/deposits")
 @RequiredArgsConstructor
+@Tag(name = "충전", description = "충전 한도와 결제 승인·확정")
 public class DepositController {
 
 	private final DepositService depositService;
@@ -57,6 +60,7 @@ public class DepositController {
 	 * 이 요청의 응답을 읽는 것은 사람의 브라우저다.
 	 */
 	@GetMapping("/kakao/approval")
+	@SecurityRequirements
 	public ResponseEntity<Void> kakaoApproval(@RequestParam("paymentId") Long paymentId,
 		@RequestParam(value = "pg_token", required = false) String pgToken) {
 		String redirectUrl = depositService.kakaoApproval(paymentId, pgToken);

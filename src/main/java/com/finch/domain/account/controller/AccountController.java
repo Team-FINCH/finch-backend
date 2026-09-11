@@ -1,5 +1,6 @@
 package com.finch.domain.account.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.finch.domain.account.dto.response.AccountRes;
 import com.finch.domain.account.service.AccountService;
 import com.finch.global.security.LoginUser;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/account")
 @RequiredArgsConstructor
+@Tag(name = "계좌", description = "계좌 잔고와 평가 금액")
 public class AccountController {
 
 	private final AccountService accountService;
