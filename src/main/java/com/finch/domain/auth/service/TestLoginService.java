@@ -66,6 +66,6 @@ public class TestLoginService {
 
 	/** 음수 {@code kakaoId} 가 테스트 계정의 표시다. 카카오 회원번호와 겹치지 않는다. 프로필 이미지는 없다. */
 	static KakaoUser testUser(int testUserNo) {
-		return new KakaoUser(-(long) testUserNo, "테스트 사용자 " + testUserNo, null);
+		return new KakaoUser(-(long) testUserNo, "FINCH 시연 계정", null);
 	}
 }

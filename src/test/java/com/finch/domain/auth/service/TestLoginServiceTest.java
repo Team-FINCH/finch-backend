@@ -34,13 +34,13 @@ class TestLoginServiceTest {
 	@DisplayName("키가 맞으면 음수 kakaoId 의 테스트 계정으로 카카오 로그인과 같은 경로를 탄다")
 	void logsInAsTestUser() {
 		LoginResult expected = new LoginResult(
-			new KakaoLoginRes("access", true, new AuthUserRes(7L, "테스트 사용자 1", null)), "refresh");
-		given(authService.loginAs(new KakaoUser(-1L, "테스트 사용자 1", null))).willReturn(expected);
+			new KakaoLoginRes("access", true, new AuthUserRes(7L, "FINCH 시연 계정", null)), "refresh");
+		given(authService.loginAs(new KakaoUser(-1L, "FINCH 시연 계정", null))).willReturn(expected);
 
 		LoginResult result = service().login(KEY, 1);
 
 		assertThat(result).isEqualTo(expected);
-		verify(authService).loginAs(new KakaoUser(-1L, "테스트 사용자 1", null));
+		verify(authService).loginAs(new KakaoUser(-1L, "FINCH 시연 계정", null));
 	}
 
 	/** 꺼져 있을 때(경로 없음)와 같은 응답이다. 키 없이 두드리는 쪽은 경로가 있는지조차 알 수 없다. */
@@ -95,11 +95,11 @@ class TestLoginServiceTest {
 	@DisplayName("앞뒤 공백은 키에서 무시한다 — 환경변수에 줄바꿈이 섞여 들어오는 경우")
 	void ignoresSurroundingWhitespace() {
 		given(authService.loginAs(any())).willReturn(
-			new LoginResult(new KakaoLoginRes("a", false, new AuthUserRes(1L, "테스트 사용자 1", null)), "r"));
+			new LoginResult(new KakaoLoginRes("a", false, new AuthUserRes(1L, "FINCH 시연 계정", null)), "r"));
 
 		new TestLoginService(authService, new TestLoginProperties(true, KEY + "\n")).login(" " + KEY, 1);
 
-		verify(authService).loginAs(new KakaoUser(-1L, "테스트 사용자 1", null));
+		verify(authService).loginAs(new KakaoUser(-1L, "FINCH 시연 계정", null));
 	}
 
 	private TestLoginService service() {
