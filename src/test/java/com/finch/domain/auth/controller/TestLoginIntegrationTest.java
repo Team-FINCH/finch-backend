@@ -62,14 +62,14 @@ class TestLoginIntegrationTest {
 
 		User user = userRepository.findById(userId).orElseThrow();
 		assertThat(user.getKakaoId()).isEqualTo(-1L);
-		assertThat(user.getNickname()).isEqualTo("테스트 사용자 1");
+		assertThat(user.getNickname()).isEqualTo("FINCH 시연 계정");
 		assertThat(accountRepository.findByUserId(userId)).isPresent();
 		assertThat(jwtProvider.parseAccessToken(body.get("accessToken").asString())).isEqualTo(userId);
 
 		mockMvc.perform(get("/api/v1/users/me")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + body.get("accessToken").asString()))
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.nickname").value("테스트 사용자 1"));
+			.andExpect(jsonPath("$.nickname").value("FINCH 시연 계정"));
 
 		Cookie refresh = first.getResponse().getCookie("refreshToken");
 		assertThat(refresh).isNotNull();
