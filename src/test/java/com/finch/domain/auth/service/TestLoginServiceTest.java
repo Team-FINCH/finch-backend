@@ -21,7 +21,7 @@ import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * 테스트 로그인의 세 안전장치(apiSpec 2.5) — 키가 틀리면 404, 번호는 키 대조 뒤에 1~10, 키 없이 켜지 않는다.
+ * 테스트 로그인의 세 안전장치(apiSpec 2.5) — 키가 틀리면 404, 번호는 키 대조 뒤에 고정값 1, 키 없이 켜지 않는다.
  * 로그인 조립 자체({@code loginAs})는 {@code AuthServiceTest} 가 보고 여기서는 목이다.
  */
 class TestLoginServiceTest {
@@ -34,13 +34,13 @@ class TestLoginServiceTest {
 	@DisplayName("키가 맞으면 음수 kakaoId 의 테스트 계정으로 카카오 로그인과 같은 경로를 탄다")
 	void logsInAsTestUser() {
 		LoginResult expected = new LoginResult(
-			new KakaoLoginRes("access", true, new AuthUserRes(7L, "테스트 사용자 3", null)), "refresh");
-		given(authService.loginAs(new KakaoUser(-3L, "테스트 사용자 3", null))).willReturn(expected);
+			new KakaoLoginRes("access", true, new AuthUserRes(7L, "테스트 사용자 1", null)), "refresh");
+		given(authService.loginAs(new KakaoUser(-1L, "테스트 사용자 1", null))).willReturn(expected);
 
-		LoginResult result = service().login(KEY, 3);
+		LoginResult result = service().login(KEY, 1);
 
 		assertThat(result).isEqualTo(expected);
-		verify(authService).loginAs(new KakaoUser(-3L, "테스트 사용자 3", null));
+		verify(authService).loginAs(new KakaoUser(-1L, "테스트 사용자 1", null));
 	}
 
 	/** 꺼져 있을 때(경로 없음)와 같은 응답이다. 키 없이 두드리는 쪽은 경로가 있는지조차 알 수 없다. */
@@ -67,8 +67,8 @@ class TestLoginServiceTest {
 
 	@ParameterizedTest
 	@NullSource
-	@ValueSource(ints = {0, -1, 11})
-	@DisplayName("키가 맞고 번호가 1~10 밖이면 400 INVALID_REQUEST, detail 에 testUserNo")
+	@ValueSource(ints = {0, -1, 2, 11})
+	@DisplayName("키가 맞고 번호가 1이 아니면 400 INVALID_REQUEST, detail 에 testUserNo")
 	void rejectsOutOfRangeNumber(Integer testUserNo) {
 		assertThatThrownBy(() -> service().login(KEY, testUserNo))
 			.isInstanceOf(CustomException.class)

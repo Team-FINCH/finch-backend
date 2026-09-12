@@ -56,20 +56,20 @@ class TestLoginIntegrationTest {
 	@Test
 	@DisplayName("음수 kakaoId 계정과 계좌를 만들고, Access 로 인증 API 가 열리며, Refresh 쿠키로 재발급된다. 두 번째는 같은 계정이다")
 	void behavesLikeKakaoLogin() throws Exception {
-		MvcResult first = login(9);
+		MvcResult first = login(1);
 		JsonNode body = mapper.readTree(first.getResponse().getContentAsString());
 		long userId = body.get("user").get("userId").asLong();
 
 		User user = userRepository.findById(userId).orElseThrow();
-		assertThat(user.getKakaoId()).isEqualTo(-9L);
-		assertThat(user.getNickname()).isEqualTo("테스트 사용자 9");
+		assertThat(user.getKakaoId()).isEqualTo(-1L);
+		assertThat(user.getNickname()).isEqualTo("테스트 사용자 1");
 		assertThat(accountRepository.findByUserId(userId)).isPresent();
 		assertThat(jwtProvider.parseAccessToken(body.get("accessToken").asString())).isEqualTo(userId);
 
 		mockMvc.perform(get("/api/v1/users/me")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + body.get("accessToken").asString()))
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.nickname").value("테스트 사용자 9"));
+			.andExpect(jsonPath("$.nickname").value("테스트 사용자 1"));
 
 		Cookie refresh = first.getResponse().getCookie("refreshToken");
 		assertThat(refresh).isNotNull();
@@ -77,7 +77,7 @@ class TestLoginIntegrationTest {
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.accessToken").isString());
 
-		JsonNode second = mapper.readTree(login(9).getResponse().getContentAsString());
+		JsonNode second = mapper.readTree(login(1).getResponse().getContentAsString());
 		assertThat(second.get("user").get("userId").asLong()).isEqualTo(userId);
 		assertThat(second.get("isNewUser").asBoolean()).isFalse();
 	}
@@ -86,11 +86,11 @@ class TestLoginIntegrationTest {
 	@DisplayName("키가 틀리면 404 이고 계정을 만들지 않는다")
 	void wrongKeyCreatesNothing() throws Exception {
 		mockMvc.perform(post("/api/v1/auth/test-login").header(TestLoginController.KEY_HEADER, "wrong-key-0123456789")
-				.contentType(MediaType.APPLICATION_JSON).content("{\"testUserNo\":10}"))
+				.contentType(MediaType.APPLICATION_JSON).content("{\"testUserNo\":2}"))
 			.andExpect(status().isNotFound())
 			.andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
 
-		assertThat(userRepository.findByKakaoId(-10L)).isEmpty();
+		assertThat(userRepository.findByKakaoId(-2L)).isEmpty();
 	}
 
 	private MvcResult login(int testUserNo) throws Exception {
