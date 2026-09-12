@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
  * <p>
  * <b>설정을 켰을 때만 빈이 생긴다</b> ({@code finch.auth.test-login.enabled=true}). 운영에서도 쓰는 입구라 안전장치가 셋이다.
  * <ol>
- *   <li><b>테스트 계정만.</b> {@code kakaoId} 가 {@code -1} ~ {@code -}{@value #MAX_TEST_USERS} 인 계정으로만 들어간다. 카카오
+ *   <li><b>고정 테스트 계정만.</b> {@code kakaoId=-1} 인 계정 하나로만 들어간다. 카카오
  *       회원번호는 양수라 실제 회원 계정으로는 이 경로로 들어갈 수 없다.</li>
  *   <li><b>키가 틀리면 404.</b> 꺼져 있을 때와 같은 응답이다 — 키 없이 두드리는 쪽은 경로가 있는지조차 알 수 없다. 그래서 요청 형식
  *       검사도 키 대조 뒤에 한다.</li>
@@ -30,7 +30,7 @@ import org.springframework.stereotype.Service;
 @ConditionalOnProperty(name = "finch.auth.test-login.enabled", havingValue = "true")
 public class TestLoginService {
 
-	static final int MAX_TEST_USERS = 10;
+	static final int TEST_USER_NO = 1;
 	static final int MIN_KEY_LENGTH = 16;
 
 	private final AuthService authService;
@@ -49,15 +49,15 @@ public class TestLoginService {
 
 	/**
 	 * @param providedKey 요청 헤더 {@code X-Test-Login-Key}. 없거나 틀리면 404 {@code RESOURCE_NOT_FOUND}.
-	 * @param testUserNo  1~{@value #MAX_TEST_USERS}. 밖이면 400 {@code INVALID_REQUEST} — 키가 맞은 뒤에만 이 판정에 닿는다.
+	 * @param testUserNo  고정값 {@value #TEST_USER_NO}. 다른 값이면 400 {@code INVALID_REQUEST} — 키가 맞은 뒤에만 이 판정에 닿는다.
 	 */
 	public LoginResult login(String providedKey, Integer testUserNo) {
 		if (providedKey == null || !MessageDigest.isEqual(key, providedKey.strip().getBytes(StandardCharsets.UTF_8))) {
 			throw new CustomException(GeneralErrorCode.RESOURCE_NOT_FOUND);
 		}
-		if (testUserNo == null || testUserNo < 1 || testUserNo > MAX_TEST_USERS) {
+		if (testUserNo == null || testUserNo != TEST_USER_NO) {
 			throw new CustomException(GeneralErrorCode.INVALID_REQUEST,
-				Map.of("testUserNo", "1~" + MAX_TEST_USERS + " 사이여야 합니다"));
+				Map.of("testUserNo", "고정 테스트 계정 번호 1이어야 합니다"));
 		}
 		LoginResult result = authService.loginAs(testUser(testUserNo));
 		log.warn("테스트 로그인 사용 testUserNo={} userId={}", testUserNo, result.body().user().userId());

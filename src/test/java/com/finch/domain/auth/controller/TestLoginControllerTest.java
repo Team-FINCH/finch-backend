@@ -49,17 +49,17 @@ class TestLoginControllerTest {
 	@Test
 	@DisplayName("토큰 없이 들어오고, 헤더 키와 번호를 서비스로 넘기며, 카카오 로그인과 같은 본문 + Refresh 쿠키를 준다")
 	void returnsLoginBodyAndRefreshCookie() throws Exception {
-		given(testLoginService.login("the-key", 2)).willReturn(new LoginResult(
-			new KakaoLoginRes("access-token", true, new AuthUserRes(7L, "테스트 사용자 2", null)), "refresh-token"));
+		given(testLoginService.login("the-key", 1)).willReturn(new LoginResult(
+			new KakaoLoginRes("access-token", true, new AuthUserRes(7L, "테스트 사용자 1", null)), "refresh-token"));
 
 		mockMvc.perform(post("/api/v1/auth/test-login")
 				.header(TestLoginController.KEY_HEADER, "the-key")
-				.contentType(MediaType.APPLICATION_JSON).content("{\"testUserNo\":2}"))
+				.contentType(MediaType.APPLICATION_JSON).content("{\"testUserNo\":1}"))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.accessToken").value("access-token"))
 			.andExpect(jsonPath("$.isNewUser").value(true))
 			.andExpect(jsonPath("$.user.userId").value(7))
-			.andExpect(jsonPath("$.user.nickname").value("테스트 사용자 2"))
+			.andExpect(jsonPath("$.user.nickname").value("테스트 사용자 1"))
 			// 속성까지 카카오 로그인과 같아야 재발급·로그아웃이 이 쿠키를 알아본다.
 			.andExpect(header().string(HttpHeaders.SET_COOKIE, allOf(containsString("refreshToken=refresh-token"),
 				containsString("HttpOnly"), containsString("Secure"), containsString("Path=/api/v1/auth"),
