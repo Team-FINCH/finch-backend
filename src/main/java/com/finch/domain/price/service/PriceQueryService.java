@@ -6,6 +6,7 @@ import com.finch.domain.price.cache.InterestRegistry;
 import com.finch.domain.price.cache.PriceCache;
 import com.finch.domain.price.cache.PriceEntry;
 import com.finch.domain.stock.port.PriceQueryPort;
+import com.finch.global.util.StockUniverse;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Collection;
@@ -32,11 +33,13 @@ public class PriceQueryService implements PriceQueryPort {
 	private final PriceCache priceCache;
 	private final InterestRegistry interestRegistry;
 	private final PriceProperties properties;
+	private final StockUniverse universe;
 	private final Clock clock;
 
 	@Autowired
-	public PriceQueryService(PriceCache priceCache, InterestRegistry interestRegistry, PriceProperties properties) {
-		this(priceCache, interestRegistry, properties, Clock.systemUTC());
+	public PriceQueryService(PriceCache priceCache, InterestRegistry interestRegistry, PriceProperties properties,
+		StockUniverse universe) {
+		this(priceCache, interestRegistry, properties, universe, Clock.systemUTC());
 	}
 
 	/**
@@ -44,10 +47,11 @@ public class PriceQueryService implements PriceQueryPort {
 	 * 테스트가 느리고 불안정해진다 ({@code MarketClock} 과 같은 이유).
 	 */
 	public PriceQueryService(PriceCache priceCache, InterestRegistry interestRegistry, PriceProperties properties,
-		Clock clock) {
+		StockUniverse universe, Clock clock) {
 		this.priceCache = priceCache;
 		this.interestRegistry = interestRegistry;
 		this.properties = properties;
+		this.universe = universe;
 		this.clock = clock;
 	}
 
@@ -58,7 +62,7 @@ public class PriceQueryService implements PriceQueryPort {
 	 */
 	@Override
 	public PriceSnapshot latest(String stockCode) {
-		interestRegistry.touch(List.of(stockCode));
+		touch(List.of(stockCode));
 		return toSnapshot(priceCache.get(stockCode).orElse(null));
 	}
 
@@ -83,7 +87,7 @@ public class PriceQueryService implements PriceQueryPort {
 	@Override
 	public Map<String, PriceSnapshot> latestAll(Collection<String> stockCodes) {
 		List<String> codes = List.copyOf(stockCodes);
-		interestRegistry.touch(codes);
+		touch(codes);
 
 		Map<String, PriceEntry> entries = priceCache.getAll(codes);
 		Map<String, PriceSnapshot> result = new LinkedHashMap<>();
@@ -91,6 +95,17 @@ public class PriceQueryService implements PriceQueryPort {
 			result.put(code, toSnapshot(entries.get(code)));
 		}
 		return result;
+	}
+
+	/**
+	 * 관심 신호는 <b>종목 범위 안</b>만 남긴다 ({@link StockUniverse}). 범위 밖 종목은 어느 화면이 물어도 공급자가 채우지 않으므로
+	 * 영영 "값 없음" 이다 — KIS REST 예산이 범위 밖으로 새지 않는다. 캐시 읽기는 그대로다: 범위 밖 코드는 캐시에 생기지 않아 결과가 같다.
+	 */
+	private void touch(List<String> codes) {
+		List<String> inUniverse = universe.filter(codes);
+		if (!inUniverse.isEmpty()) {
+			interestRegistry.touch(inUniverse);
+		}
 	}
 
 	/**

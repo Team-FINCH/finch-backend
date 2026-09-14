@@ -1,6 +1,7 @@
 package com.finch.domain.ai.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
@@ -23,7 +24,9 @@ import com.finch.global.config.SecurityConfig;
 import com.finch.global.exception.AiRelayException;
 import com.finch.global.exception.CustomException;
 import com.finch.global.security.JwtProvider;
+import com.finch.global.util.StockUniverse;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -64,6 +67,27 @@ class AiRelayControllerTest {
 
 	@MockitoBean
 	private JwtProvider jwtProvider;
+
+	/** 종목 범위는 기본으로 전부 통과시킨다. 범위 밖 판정은 아래 {@link #analysisOutsideUniverse} 하나가 본다. */
+	@MockitoBean
+	private StockUniverse universe;
+
+	@BeforeEach
+	void universePassesEverything() {
+		given(universe.contains(anyString())).willReturn(true);
+	}
+
+	@Test
+	@DisplayName("POST /ai/stocks/{stockCode}/analysis — 종목 범위 밖이면 STOCK_NOT_FOUND 404 이고 AI 서버로 가지 않는다")
+	void analysisOutsideUniverse() throws Exception {
+		givenLoggedIn(42L);
+		given(universe.contains("000150")).willReturn(false);
+
+		mockMvc.perform(authed(post("/api/v1/ai/stocks/000150/analysis")).contentType(MediaType.APPLICATION_JSON).content("{}"))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.code").value("STOCK_NOT_FOUND"));
+		verifyNoInteractions(relayService);
+	}
 
 	@Test
 	@DisplayName("POST /ai/stocks/{stockCode}/analysis — 경로 변수를 ticker 로, 본문을 그대로, 사용자는 토큰에서 넘긴다. 클라이언트 X-User-Id 는 읽지 않는다")
