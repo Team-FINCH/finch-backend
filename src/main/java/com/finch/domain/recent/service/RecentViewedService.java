@@ -6,6 +6,7 @@ import com.finch.domain.recent.repository.RecentViewedStockRepository;
 import com.finch.domain.stock.event.StockViewedEvent;
 import com.finch.domain.stock.port.PriceQueryPort;
 import com.finch.domain.stock.port.PriceQueryPort.PriceSnapshot;
+import com.finch.global.util.StockUniverse;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +31,7 @@ public class RecentViewedService {
 
 	private final RecentViewedStockRepository recentViewedStockRepository;
 	private final PriceQueryPort priceQueryPort;
+	private final StockUniverse universe;
 
 	/**
 	 * 종목 상세를 본 사건을 기록한다.
@@ -54,7 +56,9 @@ public class RecentViewedService {
 	/** 목록 (apiSpec 6.1). 시세는 벌크 1회로 붙인다 — 30건이면 N+1 이 30번이다. */
 	@Transactional(readOnly = true)
 	public RecentViewedRes list(Long userId) {
-		List<RecentViewedRow> rows = recentViewedStockRepository.findRows(userId);
+		// 종목 범위가 좁혀지기 전에 본 종목은 숨긴다 — 상세로 가면 404 라 목록에 있으면 갈 곳이 없다. 행은 지우지 않는다.
+		List<RecentViewedRow> rows = recentViewedStockRepository.findRows(userId).stream()
+			.filter(row -> universe.contains(row.getStockCode())).toList();
 		Map<String, PriceSnapshot> prices = priceQueryPort.latestAll(rows.stream().map(RecentViewedRow::getStockCode).toList());
 		return new RecentViewedRes(rows.stream()
 			.map(row -> RecentViewedRes.Item.of(row, prices.getOrDefault(row.getStockCode(), PriceSnapshot.missing())))

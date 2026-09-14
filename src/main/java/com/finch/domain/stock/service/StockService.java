@@ -21,6 +21,7 @@ import com.finch.domain.stock.repository.StockRepository;
 import com.finch.global.apiPayload.code.GeneralErrorCode;
 import com.finch.global.exception.CustomException;
 import com.finch.global.util.KstTime;
+import com.finch.global.util.StockUniverse;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -48,11 +49,14 @@ public class StockService {
 	private final WatchlistQueryPort watchlistQueryPort;
 	private final ApplicationEventPublisher eventPublisher;
 	private final CandleSyncService candleSyncService;
+	private final StockUniverse universe;
 
 	/**
 	 * 검색 (apiSpec 5.1). 컨트롤러가 길이·범위를 검증했지만 앞뒤 공백을 걷어낸 뒤 다시 본다 — {@code " 삼"} 은 2글자 검증을
 	 * 통과하고도 검색어는 1글자다. 시세는 {@code latestAll} 로 한 번에 붙인다 (N+1 금지).
 	 * 검색 이벤트는 검증을 통과한 검색어만 발행한다.
+	 * <p>
+	 * 종목 범위({@link StockUniverse})가 켜져 있으면 범위 안에서만 찾는다 — 범위 밖 종목은 검색에 나타나지 않아야 상세로 갈 길이 없다.
 	 */
 	@Transactional(readOnly = true)
 	public StockSearchRes search(Long userId, String keyword, int size) {
@@ -60,7 +64,9 @@ public class StockService {
 		if (trimmed.length() < 2) {
 			throw new CustomException(GeneralErrorCode.INVALID_REQUEST, Map.of("keyword", "2글자 이상 입력해 주세요"));
 		}
-		List<Stock> stocks = stockRepository.searchByKeyword(trimmed, size);
+		List<Stock> stocks = universe.restricted()
+			? stockRepository.searchByKeywordWithin(trimmed, universe.codes(), size)
+			: stockRepository.searchByKeyword(trimmed, size);
 		Map<String, PriceSnapshot> prices = priceQueryPort.latestAll(stocks.stream().map(Stock::getStockCode).toList());
 		eventPublisher.publishEvent(new StockSearchedEvent(userId, trimmed));
 		return new StockSearchRes(stocks.stream()
@@ -119,15 +125,28 @@ public class StockService {
 		return StockPriceRes.of(stockCode, priceQueryPort.latest(stockCode));
 	}
 
-	/** 주문(S9)이 부른다. 없는 종목·상장폐지는 {@code exists=false}, 거래정지는 사유와 함께. 예외를 던지지 않는다 — 판정은 주문의 몫이다. */
+	/**
+	 * 주문(S9)·관심 등록(S6)이 부른다. 없는 종목·상장폐지·<b>종목 범위 밖</b>은 {@code exists=false}, 거래정지는 사유와 함께.
+	 * 예외를 던지지 않는다 — 판정은 주문의 몫이다. 범위 밖을 "없음" 으로 보는 것은 {@link #findActive} 와 같은 규칙이다.
+	 */
 	@Transactional(readOnly = true)
 	public TradabilityRes getTradable(String stockCode) {
+		if (!universe.contains(stockCode)) {
+			return TradabilityRes.missing();
+		}
 		return stockRepository.findByStockCodeAndIsActiveTrue(stockCode)
 			.map(s -> new TradabilityRes(true, s.getStockName(), s.isSuspended(), s.getSuspendedReason()))
 			.orElseGet(TradabilityRes::missing);
 	}
 
+	/**
+	 * 활성 종목이고 <b>종목 범위 안</b>이어야 한다. 둘 다 {@code STOCK_NOT_FOUND} 다 — 범위 밖 종목은 서비스에 없는 종목이고,
+	 * 코드를 따로 두면 프론트가 새 분기를 만들어야 한다. 검색에 나오지 않는 종목이라 사용자가 마주칠 일도 없다 (apiSpec §5 머리).
+	 */
 	private Stock findActive(String stockCode) {
+		if (!universe.contains(stockCode)) {
+			throw new CustomException(StockErrorCode.STOCK_NOT_FOUND);
+		}
 		return stockRepository.findByStockCodeAndIsActiveTrue(stockCode)
 			.orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND));
 	}
