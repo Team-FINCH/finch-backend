@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -14,10 +15,13 @@ import com.finch.domain.price.cache.InterestRegistry;
 import com.finch.domain.price.cache.PriceCache;
 import com.finch.domain.price.cache.PriceEntry;
 import com.finch.domain.price.event.PriceObservedEvent;
+import com.finch.domain.price.feed.RealtimeCoverage;
 import com.finch.global.lock.LeaderLock;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -140,13 +144,39 @@ class KisPollingFeedTest {
 			.filter(e -> e.stockCode().equals(code)).toList();
 	}
 
+	@Test
+	@DisplayName("실시간 티어가 맡고 있는 종목은 순회하지 않는다 — 커버리지가 비면(웹소켓 끊김) 다시 돈다")
+	void skipsRealtimeCoveredCodes() {
+		String covered = newCode();
+		String polled = newCode();
+		KisClient client = mock(KisClient.class);
+		given(client.currentPrice(any(), any())).willReturn(new KisQuote(1_000, 1_000L, false, null));
+		Set<String> coverage = new HashSet<>(Set.of(covered));
+		KisPollingFeed feed = feed(client, List.of(A), true, () -> coverage);
+		interestRegistry.touch(List.of(covered, polled));
+
+		feed.tick();
+		verify(client, never()).currentPrice(eq(A), eq(covered));
+		verify(client).currentPrice(eq(A), eq(polled));
+		assertThat(priceCache.get(covered)).isEmpty();
+
+		coverage.clear();
+		feed.tick();
+		verify(client).currentPrice(eq(A), eq(covered));
+	}
+
 	private KisPollingFeed feed(KisClient client, List<KisCredential> keys, boolean leader) {
+		return feed(client, keys, leader, RealtimeCoverage.NONE);
+	}
+
+	private KisPollingFeed feed(KisClient client, List<KisCredential> keys, boolean leader, RealtimeCoverage coverage) {
 		LeaderLock lock = mock(LeaderLock.class);
 		given(lock.isLeader()).willReturn(leader);
 		ApplicationEventPublisher publisher = published::add;
 		KisProperties props = new KisProperties("https://kis.test", keys, Duration.ofSeconds(3), 20,
 			Duration.ofSeconds(5), Duration.ofMinutes(5), false);
-		return new KisPollingFeed(client, new KisKeyPool(keys), priceCache, interestRegistry, lock, publisher, props);
+		return new KisPollingFeed(client, new KisKeyPool(keys), priceCache, interestRegistry, lock, publisher, props,
+			coverage);
 	}
 
 	private static String newCode() {

@@ -5,11 +5,13 @@ import com.finch.domain.price.cache.PriceCache;
 import com.finch.domain.price.cache.PriceEntry;
 import com.finch.domain.price.event.PriceObservedEvent;
 import com.finch.domain.price.feed.PriceFeed;
+import com.finch.domain.price.feed.RealtimeCoverage;
 import com.finch.global.lock.LeaderLock;
 import com.finch.global.util.KstTime;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -38,6 +40,9 @@ import org.springframework.stereotype.Component;
  * <p>
  * 한 종목이 실패해도 나머지는 계속한다. 단 <b>한도 초과({@code RATE_LIMITED})는 그 키의 이번 틱을 접는다</b> — 계속 두드리면 더 맞는다.
  * 순회가 주기보다 오래 걸리면(종목이 수용량을 넘으면) 다음 틱은 그만큼 늦게 시작한다 — apiSpec 5.6 관계식 4 의 "자연 열화" 다.
+ * <p>
+ * <b>실시간 티어가 맡은 종목은 순회하지 않는다</b> ({@link RealtimeCoverage}). 웹소켓이 살아 있는 동안만 빠지고, 끊기면 다시 돈다 —
+ * 폴링이 실시간의 폴백이다. 실시간이 없는 구성은 {@code RealtimeCoverage.NONE} 이라 전부 돈다.
  */
 @Slf4j
 @Component
@@ -51,6 +56,7 @@ public class KisPollingFeed implements PriceFeed, SmartLifecycle {
 	private final LeaderLock leaderLock;
 	private final ApplicationEventPublisher eventPublisher;
 	private final KisProperties properties;
+	private final RealtimeCoverage realtimeCoverage;
 	/** 종목별 마지막으로 stock 에 알린 값. 같으면 다시 알리지 않는다. */
 	private final Map<String, PriceObservedEvent> lastObserved = new ConcurrentHashMap<>();
 
@@ -59,7 +65,8 @@ public class KisPollingFeed implements PriceFeed, SmartLifecycle {
 	private volatile boolean running;
 
 	public KisPollingFeed(KisClient client, KisKeyPool keyPool, PriceCache priceCache, InterestRegistry interestRegistry,
-		LeaderLock leaderLock, ApplicationEventPublisher eventPublisher, KisProperties properties) {
+		LeaderLock leaderLock, ApplicationEventPublisher eventPublisher, KisProperties properties,
+		RealtimeCoverage realtimeCoverage) {
 		this.client = client;
 		this.keyPool = keyPool;
 		this.priceCache = priceCache;
@@ -67,6 +74,7 @@ public class KisPollingFeed implements PriceFeed, SmartLifecycle {
 		this.leaderLock = leaderLock;
 		this.eventPublisher = eventPublisher;
 		this.properties = properties;
+		this.realtimeCoverage = realtimeCoverage;
 	}
 
 	/** 관심 종목 한 바퀴. 리더가 아니면 0. */
@@ -75,7 +83,9 @@ public class KisPollingFeed implements PriceFeed, SmartLifecycle {
 		if (!leaderLock.isLeader()) {
 			return 0;
 		}
-		Set<String> codes = interestRegistry.interested();
+		Set<String> codes = new LinkedHashSet<>(interestRegistry.interested());
+		// 실시간 티어가 지금 맡고 있는 종목은 빼고 돈다. 웹소켓이 끊기면 빈 집합이 와서 다시 돈다.
+		codes.removeAll(realtimeCoverage.covered());
 		if (codes.isEmpty()) {
 			return 0;
 		}

@@ -7,6 +7,7 @@ import com.finch.domain.price.feed.FakeIndexFeed;
 import com.finch.domain.price.feed.FakePriceFeed;
 import com.finch.domain.price.feed.IndexFeed;
 import com.finch.domain.price.feed.PriceFeed;
+import com.finch.domain.price.feed.RealtimeCoverage;
 import com.finch.domain.stock.port.CandleSourcePort;
 import com.finch.domain.stock.port.EmptyCandleSourcePort;
 import org.junit.jupiter.api.DisplayName;
@@ -41,5 +42,8 @@ class KisProviderWiringTest {
 		assertThat(context.getBean(KisKeyPool.class).size()).isEqualTo(1);
 		assertThat(context.getBean(KisKeyPool.class).keys().getFirst().label()).isEqualTo("test");
 		assertThat(context.getBean(KisPollingFeed.class).isRunning()).isFalse();
+		// 실시간 티어는 realtime.enabled 가 따로 켜져야 한다. 기본은 꺼져 있어 폴링이 전부 맡는다.
+		assertThat(context.getBeanNamesForType(KisRealtimeFeed.class)).isEmpty();
+		assertThat(context.getBean(RealtimeCoverage.class)).isSameAs(RealtimeCoverage.NONE);
 	}
 }
