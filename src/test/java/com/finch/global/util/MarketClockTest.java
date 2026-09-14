@@ -61,6 +61,39 @@ class MarketClockTest {
 		assertThat(marketClock(LocalDateTime.parse("2026-09-06T03:00:00"), true).isOpen()).isTrue();
 	}
 
+	@ParameterizedTest(name = "{0} → {1}, 다음 변경 {2}")
+	@DisplayName("시세 세션은 정규장·애프터마켓·닫힘 셋이고, 다음 변경 시각은 그 다음 경계다 (주말은 월요일 09:00)")
+	@CsvSource({
+		// 2026-09-07 월요일. 경계 시각 자체는 아직 이전 세션이다.
+		"2026-09-07T08:59:59, CLOSED,  2026-09-07T09:00:00",
+		"2026-09-07T09:00:00, REGULAR, 2026-09-07T15:30:00",
+		"2026-09-07T15:30:00, REGULAR, 2026-09-07T16:00:00",
+		"2026-09-07T15:30:01, CLOSED,  2026-09-07T16:00:00",
+		"2026-09-07T16:00:00, AFTER,   2026-09-07T20:00:00",
+		"2026-09-07T20:00:00, AFTER,   2026-09-08T09:00:00",
+		"2026-09-07T20:00:01, CLOSED,  2026-09-08T09:00:00",
+		// 2026-09-11 금요일 밤 → 월요일 09:00. 2026-09-12 토요일 정오도 같다.
+		"2026-09-11T21:00:00, CLOSED,  2026-09-14T09:00:00",
+		"2026-09-12T12:00:00, CLOSED,  2026-09-14T09:00:00",
+	})
+	void sessionsAndNextChange(LocalDateTime now, MarketClock.Session session, LocalDateTime nextChange) {
+		MarketClock clock = marketClock(now, false);
+
+		assertThat(clock.sessionNow()).isEqualTo(session);
+		assertThat(clock.nextChangeAt()).isEqualTo(ZonedDateTime.of(nextChange, KST).toInstant());
+		// 애프터마켓은 시세만 살아 있고 주문은 받지 않는다 — isOpen 은 정규장만이다.
+		assertThat(clock.isOpen()).isEqualTo(session == MarketClock.Session.REGULAR);
+	}
+
+	@Test
+	@DisplayName("always-open 이면 세션은 늘 REGULAR 이고 다음 변경 시각은 없다")
+	void alwaysOpenSession() {
+		MarketClock clock = marketClock(LocalDateTime.parse("2026-09-06T03:00:00"), true);
+
+		assertThat(clock.sessionNow()).isEqualTo(MarketClock.Session.REGULAR);
+		assertThat(clock.nextChangeAt()).isNull();
+	}
+
 	@Test
 	@DisplayName("판정 기준은 서버 기본 시간대가 아니라 KST 다")
 	void judgesInKoreanTime() {
