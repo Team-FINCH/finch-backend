@@ -20,7 +20,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *
  * @param baseUrl            실전 {@code https://openapi.koreainvestment.com:9443}, 모의 {@code https://openapivts.koreainvestment.com:29443}.
  * @param keys               앱키 풀. provider=kis 면 1개 이상이어야 한다.
- * @param pollInterval       관심 종목 순회 주기 (apiSpec 5.6 "3초 목표"). {@code stale-after}(10초)보다 짧아야 한다 (관계식 3).
+ * @param pollInterval       관심 종목 한 바퀴 뒤 쉬는 시간 (scheduleWithFixedDelay). 속도는 리미터가 잡으므로 운영은 1초다 —
+ *                           apiSpec 5.6 "3초 목표" 는 바퀴 시간 + 이 값이다. {@code stale-after}(10초)보다 짧아야 한다 (관계식 3).
  * @param ratePerSecond      <b>키당</b> 초당 호출 상한. 2026-09-14 실측: 모의투자 키는 2 (실전 도메인에서 조회해도 모의 기준이 적용된다).
  *                           실전 키는 20. 값이 KIS 한도보다 크면 리미터가 아무것도 막지 않고 KIS 가 EGW00201 로 거부한다.
  * @param timeout            호출 하나의 응답 대기 제한.
