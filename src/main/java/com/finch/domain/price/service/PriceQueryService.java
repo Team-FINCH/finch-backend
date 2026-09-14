@@ -6,6 +6,7 @@ import com.finch.domain.price.cache.InterestRegistry;
 import com.finch.domain.price.cache.PriceCache;
 import com.finch.domain.price.cache.PriceEntry;
 import com.finch.domain.stock.port.PriceQueryPort;
+import com.finch.global.util.MarketClock;
 import com.finch.global.util.StockUniverse;
 import java.time.Clock;
 import java.time.Instant;
@@ -34,24 +35,27 @@ public class PriceQueryService implements PriceQueryPort {
 	private final InterestRegistry interestRegistry;
 	private final PriceProperties properties;
 	private final StockUniverse universe;
+	private final MarketClock marketClock;
 	private final Clock clock;
 
 	@Autowired
 	public PriceQueryService(PriceCache priceCache, InterestRegistry interestRegistry, PriceProperties properties,
-		StockUniverse universe) {
-		this(priceCache, interestRegistry, properties, universe, Clock.systemUTC());
+		StockUniverse universe, MarketClock marketClock) {
+		this(priceCache, interestRegistry, properties, universe, marketClock, Clock.systemUTC());
 	}
 
 	/**
 	 * 시각을 고정해 {@code stale} 경계를 확인하려는 테스트가 쓴다. 실제 시간을 기다리거나 {@code Thread.sleep} 으로 흉내 내면
-	 * 테스트가 느리고 불안정해진다 ({@code MarketClock} 과 같은 이유).
+	 * 테스트가 느리고 불안정해진다 ({@code MarketClock} 과 같은 이유). {@code marketClock} 도 같은 시계로 만들어 넘겨야 장 경계와
+	 * stale 경계가 같은 순간을 본다.
 	 */
 	public PriceQueryService(PriceCache priceCache, InterestRegistry interestRegistry, PriceProperties properties,
-		StockUniverse universe, Clock clock) {
+		StockUniverse universe, MarketClock marketClock, Clock clock) {
 		this.priceCache = priceCache;
 		this.interestRegistry = interestRegistry;
 		this.properties = properties;
 		this.universe = universe;
+		this.marketClock = marketClock;
 		this.clock = clock;
 	}
 
@@ -116,13 +120,18 @@ public class PriceQueryService implements PriceQueryPort {
 	 *       "시세 지연" 을 띄우되 가격은 계속 보여준다.</li>
 	 *   <li><b>정상</b> — {@code stale=false}.</li>
 	 * </ul>
+	 * <b>수신 끊김은 정규장 중에만 판정한다</b> ({@link MarketClock#isOpen}). 장 밖에서는 체결이 없어 마지막 값이 곧 현재가다 —
+	 * 웹소켓 티어(S12)는 체결이 올 때만 캐시를 쓰므로, 장 밖에 시각 규칙을 그대로 두면 15:30 부터 30종목 전부가 "시세 지연" 이 된다.
+	 * 폴링 티어는 값이 같아도 매 틱 다시 쓰기 때문에 이 차이가 드러나지 않았었다. 값 없음은 장 밖에서도 {@code stale=true} 다 —
+	 * 값이 없는 것과 값이 오래된 것은 다르다.
+	 * <p>
 	 * 등락은 저장하지 않고 {@link PriceMath} 가 계산한다.
 	 */
 	private PriceSnapshot toSnapshot(PriceEntry entry) {
 		if (entry == null) {
 			return PriceSnapshot.missing();
 		}
-		boolean stale = Instant.now(clock).isAfter(entry.asOf().plus(properties.staleAfter()));
+		boolean stale = marketClock.isOpen() && Instant.now(clock).isAfter(entry.asOf().plus(properties.staleAfter()));
 		return new PriceSnapshot(entry.currentPrice(),
 			PriceMath.changeAmount(entry.currentPrice(), entry.previousClose()),
 			PriceMath.changeRate(entry.currentPrice(), entry.previousClose()),

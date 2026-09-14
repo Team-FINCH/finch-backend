@@ -9,9 +9,12 @@ import com.finch.domain.price.cache.PriceCache;
 import com.finch.domain.price.cache.PriceEntry;
 import com.finch.domain.stock.port.PriceQueryPort;
 import com.finch.domain.stock.port.PriceQueryPort.PriceSnapshot;
+import com.finch.global.config.FinchProperties;
+import com.finch.global.util.MarketClock;
 import com.finch.global.util.StockUniverse;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -106,6 +109,25 @@ class PriceQueryServiceTest {
 			assertThat(serviceAt(NOW).latest(code).stale()).isFalse();
 			assertThat(serviceAt(NOW.plusMillis(1)).latest(code).stale()).isTrue();
 		}
+
+		/**
+		 * 웹소켓 티어는 체결이 올 때만 캐시를 쓴다. 장 밖에 시각 규칙을 그대로 두면 15:30 부터 30종목 전부가 "시세 지연" 이 된다 —
+		 * 장 밖에서는 마지막 값이 곧 현재가라 지연이 아니다.
+		 */
+		@Test
+		@DisplayName("장 밖(15:45 KST·주말)에서는 오래된 값도 stale 이 아니다 — 값 없음은 여전히 stale 이다")
+		void notStaleOutsideSession() {
+			String code = newCode();
+			Instant afterClose = Instant.parse("2026-09-07T06:45:00Z"); // 월요일 15:45 KST
+			Instant weekend = Instant.parse("2026-09-06T03:00:00Z");    // 일요일 12:00 KST
+			priceCache.put(code, new PriceEntry(73_500L, 74_400L, afterClose.minus(Duration.ofHours(2))));
+
+			assertThat(serviceAt(afterClose).latest(code).stale()).isFalse();
+			assertThat(serviceAt(weekend).latest(code).stale()).isFalse();
+			assertThat(serviceAt(afterClose).latest(newCode()).stale()).isTrue();
+			// 같은 나이의 값이라도 장중이면 stale 이다 — 규칙이 사라진 게 아니라 장 밖에서만 쉰다.
+			assertThat(serviceAt(NOW).latest(code).stale()).isTrue();
+		}
 	}
 
 	@Nested
@@ -162,9 +184,15 @@ class PriceQueryServiceTest {
 
 	// ---- helpers ----
 
+	/** 장 시계도 같은 고정 시각으로 만든다 — stale 판정이 "지금" 을 한 번 잡아 두 규칙에 같이 쓰기 때문이다. always-open 은 끈다. */
 	private PriceQueryService serviceAt(Instant instant) {
+		Clock clock = Clock.fixed(instant, ZoneOffset.UTC);
+		FinchProperties finch = new FinchProperties(new FinchProperties.Market(false),
+			new FinchProperties.Http(Duration.ofSeconds(3), Duration.ofSeconds(2), Duration.ofSeconds(30)),
+			new FinchProperties.LeaderLock(Duration.ofSeconds(10), Duration.ofSeconds(3)),
+			new FinchProperties.Internal("test-only-internal-token"));
 		return new PriceQueryService(priceCache, interestRegistry, properties, StockUniverse.unrestricted(),
-			Clock.fixed(instant, ZoneOffset.UTC));
+			new MarketClock(finch, clock), clock);
 	}
 
 	/** 테스트마다 다른 종목코드를 쓴다 — 캐시가 컨테이너에 공유돼 앞 테스트의 값이 남는다. */
