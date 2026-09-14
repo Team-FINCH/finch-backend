@@ -146,6 +146,25 @@ class CandleSyncServiceTest {
 		assertThat(stockRepository.findById(code).orElseThrow().getPreviousClose()).isEqualTo(120L);
 	}
 
+	@Test
+	@DisplayName("워밍은 봉이 없는 종목만 원천에서 받아 넣고, 이미 있는 종목은 원천을 부르지 않는다")
+	void warmUpFillsOnlyEmptyStocks() {
+		String empty = newStock(10_000L);
+		String filled = newStock(10_000L);
+		LocalDate yesterday = LocalDate.now(KstTime.ZONE).minusDays(1);
+		given(candleSource.dailyCandles(any(), any(), any()))
+			.willReturn(List.of(new CandleData(yesterday, 100, 110, 90, 105, 7)));
+		candleSyncService.backfillIfEmpty(filled);
+		verify(candleSource, times(1)).dailyCandles(eq(filled), any(), any());
+
+		int result = candleSyncService.warmUp(List.of(empty, filled));
+
+		assertThat(result).isEqualTo(1);
+		assertThat(candleSyncService.hasCandles(empty)).isTrue();
+		verify(candleSource, times(1)).dailyCandles(eq(empty), any(), any());
+		verify(candleSource, times(1)).dailyCandles(eq(filled), any(), any());
+	}
+
 	private String newStock(long previousClose) {
 		String code = "ZC" + String.format("%04d", CODE_SEQ.incrementAndGet());
 		transactionTemplate.executeWithoutResult(s -> stockRepository.save(

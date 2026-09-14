@@ -35,10 +35,13 @@ public record StockProperties(@DefaultValue Master master, @DefaultValue("true")
 	/**
 	 * 일봉 적재 ({@code CandleSyncService}, S10).
 	 *
-	 * @param backfillDays 봉이 없는 종목을 처음 볼 때 받아 오는 기간. 1년 = 차트의 가장 긴 탭(1Y)이다.
-	 * @param cron         일일 갱신. 16:00 KST — 장 마감(15:30) 뒤라 당일 봉이 확정돼 있다. 리더만 돈다.
+	 * @param backfillDays    봉이 없는 종목을 처음 볼 때 받아 오는 기간. 3년 = 차트의 가장 긴 탭(3Y)이다.
+	 * @param cron            일일 갱신. 20:30 KST — 애프터마켓(16:00~20:00)까지 끝나야 당일 봉이 확정된다. 리더만 돈다.
+	 * @param warmUpOnStartup 기동 시 서비스 종목({@code finch.universe})의 봉을 미리 채운다 — 첫 차트 조회의 8회 호출 대기를 없앤다.
+	 *                        봉이 있는 종목은 건너뛰므로 첫 배포 때 한 번이다. 리더만, 배경 스레드에서 ({@code StockStartupRunner}).
 	 */
-	public record Candle(@DefaultValue("365") int backfillDays, @DefaultValue("0 0 16 * * *") String cron) {
+	public record Candle(@DefaultValue("1095") int backfillDays, @DefaultValue("0 30 20 * * *") String cron,
+		@DefaultValue("true") boolean warmUpOnStartup) {
 	}
 
 	public enum Source {

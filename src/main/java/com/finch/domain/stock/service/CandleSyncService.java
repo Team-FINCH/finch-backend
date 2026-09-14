@@ -26,8 +26,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   <li><b>lazy</b> ({@link #backfillIfEmpty}) — 캔들 API 가 불린 종목에 봉이 하나도 없으면 그 자리에서
  *       {@code backfill-days}(3년) 만큼 받아 넣는다. 전 종목 백필(2,700 × 8회 호출)은 하지 않는다 — 아무도 안 보는
  *       종목의 봉을 미리 받을 이유가 없고 한도만 쓴다.</li>
- *   <li><b>배치</b> ({@link #refreshDaily}) — 16:00 KST, 봉이 있는 종목만 마지막 봉 다음 날부터 오늘까지 받아 더한다. 그 종목들의
- *       {@code stock.previous_close} 를 마지막 봉 종가로 맞춘다.</li>
+ *   <li><b>배치</b> ({@link #refreshDaily}) — 20:30 KST(애프터마켓 종료 뒤), 봉이 있는 종목만 마지막 봉 다음 날부터 오늘까지 받아
+ *       더한다. 그 종목들의 {@code stock.previous_close} 를 마지막 봉 종가로 맞춘다.</li>
+ *   <li><b>워밍</b> ({@link #warmUp}) — 기동 시 서비스 종목({@code finch.universe})만 lazy 와 같은 적재를 미리 해 둔다. 아무도 안 보는
+ *       종목까지 채우지는 않는다는 원칙은 그대로다 — 서비스 종목은 "누군가 볼 종목" 이다.</li>
  * </ol>
  * <b>원천 호출은 트랜잭션 밖이다</b> (backConvention 8장 — 외부 HTTP 는 트랜잭션 밖). 그래서 {@code @Transactional} 대신
  * {@link TransactionTemplate}(REQUIRES_NEW)으로 저장만 짧게 감싼다. 호출자({@code StockService.candles})가 읽기 트랜잭션 안에 있어도
@@ -66,7 +68,7 @@ public class CandleSyncService {
 	 * 영영 미완성으로 굳는다 — {@link #backfillIfEmpty} 는 봉이 하나라도 있으면 다시 부르지 않고, {@link #refreshDailyNow} 는
 	 * <b>마지막 봉 다음 날부터</b> 받으므로 오늘을 건너뛰며, {@link #save} 는 이미 있는 날을 거른다. 게다가 그 값으로
 	 * {@code stock.previous_close} 까지 맞춰져 그 종목의 등락률이 계속 틀린다. 그래서 <b>확정된 봉만 저장한다</b> —
-	 * 오늘 봉은 16:00 배치가 정상 경로로 넣는다.
+	 * 오늘 봉은 20:30 배치가 정상 경로로 넣는다.
 	 *
 	 * @return 넣은 봉 수.
 	 */
@@ -90,10 +92,33 @@ public class CandleSyncService {
 	}
 
 	/**
-	 * 봉이 있는 종목 전부, 마지막 봉 다음 날부터 오늘까지. 장 마감(15:30) 뒤 16:00 이라 당일 봉이 확정돼 있다.
+	 * 서비스 종목 중 봉이 없는 것만 {@link #backfillIfEmpty} 로 미리 채운다. 호출자({@code StockStartupRunner})가 리더 판정과 배경 스레드를
+	 * 맡고, 여기서는 순서대로 돈다 — 원천 호출이 리미터를 거치므로 30종목 × 8회는 초당 2건에서 약 2분이다. 한 종목이 실패해도
+	 * 나머지는 계속한다 ({@code backfillIfEmpty} 가 삼킨다). 이미 봉이 있으면 원천을 부르지 않으므로 두 번째 기동부터는 즉시 끝난다.
+	 *
+	 * @return 새로 채운 종목 수.
+	 */
+	public int warmUp(List<String> stockCodes) {
+		int filled = 0;
+		int skipped = 0;
+		for (String code : stockCodes) {
+			if (dailyCandleRepository.existsByStockCode(code)) {
+				skipped++;
+				continue;
+			}
+			if (backfillIfEmpty(code) > 0) {
+				filled++;
+			}
+		}
+		log.info("일봉 워밍 대상={} 채움={} 이미 있음={}", stockCodes.size(), filled, skipped);
+		return filled;
+	}
+
+	/**
+	 * 봉이 있는 종목 전부, 마지막 봉 다음 날부터 오늘까지. 애프터마켓(16:00~20:00)까지 끝난 20:30 이라 당일 봉이 확정돼 있다.
 	 * 종목 하나가 실패해도 나머지는 계속한다.
 	 */
-	@Scheduled(cron = "${finch.stock.candle.cron:0 0 16 * * *}", zone = "Asia/Seoul")
+	@Scheduled(cron = "${finch.stock.candle.cron:0 30 20 * * *}", zone = "Asia/Seoul")
 	public void refreshDaily() {
 		if (!leaderLock.isLeader()) {
 			return;
