@@ -1,7 +1,10 @@
 package com.finch.global.config;
 
 import java.time.Duration;
+import java.util.LinkedHashSet;
+import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
@@ -19,7 +22,44 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  */
 @ConfigurationProperties("finch")
 public record FinchProperties(@DefaultValue Market market, @DefaultValue Http http,
-	@DefaultValue LeaderLock leaderLock, @DefaultValue Internal internal) {
+	@DefaultValue LeaderLock leaderLock, @DefaultValue Internal internal, @DefaultValue Universe universe) {
+
+	/** 생성자가 둘이라 Boot 에게 바인딩에 쓸 쪽(정식 생성자)을 알려 준다 — 없으면 기본 생성자를 찾다 기동에 실패한다. */
+	@ConstructorBinding
+	public FinchProperties {
+	}
+
+	/** 종목 범위 없이 만드는 생성자. 범위가 생기기 전의 테스트들이 쓴다. */
+	public FinchProperties(Market market, Http http, LeaderLock leaderLock, Internal internal) {
+		this(market, http, leaderLock, internal, Universe.unrestricted());
+	}
+
+	/**
+	 * 서비스 종목 범위 ({@code StockUniverse}). 켜면 이 목록 밖의 종목은 서비스에 없는 종목이다 — 검색에서 빠지고, 상세·시세·주문·관심
+	 * 등록은 {@code STOCK_NOT_FOUND} 이고, AI 종목 분석 중계도 AI 서버까지 가지 않는다.
+	 * <p>
+	 * 왜 두는가 — 시세는 KIS 웹소켓이 고정 등록하는 종목(finch.kis.realtime.codes, 같은 목록)만 실시간이고, 그 밖은 REST 폴링이라
+	 * 2건/초 한도에서 6종목이 상한이다. AI 종목 분석도 종목마다 LLM 을 부르므로 범위를 좁혀야 GMS 크레딧이 버틴다. 시연 범위를
+	 * 30종목으로 정한 이유다 (이슈 #253).
+	 * <p>
+	 * 종목 마스터는 전 종목 그대로 적재한다 — 이름·기준가는 필요하고 비용이 없다. 범위는 마스터가 아니라 <b>판정</b>에서 건다.
+	 *
+	 * @param enabled false 면 범위가 없다 — 마스터의 모든 활성 종목이 서비스 대상이다. 테스트 설정이 false 로 둔다.
+	 * @param codes   범위. enabled 면 1개 이상이어야 한다.
+	 */
+	public record Universe(@DefaultValue("false") boolean enabled, List<String> codes) {
+
+		public Universe {
+			codes = codes == null ? List.of() : List.copyOf(new LinkedHashSet<>(codes));
+			if (enabled && codes.isEmpty()) {
+				throw new IllegalStateException("finch.universe.enabled=true 인데 codes 가 비어 있다");
+			}
+		}
+
+		public static Universe unrestricted() {
+			return new Universe(false, List.of());
+		}
+	}
 
 	/**
 	 * 장 시간 판정 ({@code MarketClock}).
