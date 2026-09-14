@@ -35,4 +35,23 @@ public interface StockRepository extends JpaRepository<Stock, String> {
 		 LIMIT :size
 		""")
 	List<Stock> searchByKeyword(String keyword, int size);
+
+	/**
+	 * {@link #searchByKeyword} 에 종목 범위({@code finch.universe})를 더한 것. 범위가 켜져 있을 때만 쓴다 — 30개 안팎의 {@code IN}
+	 * 이라 인덱스와 무관하게 싸다. 조건·정렬·LIMIT 은 위와 같다. 두 쿼리를 하나로 합치지 않는 이유 — {@code IN} 에 빈 목록을 줄 수
+	 * 없고, "범위 없음" 을 나타내는 특수값을 SQL 에 두면 쿼리가 읽기 어려워진다.
+	 */
+	@Query(nativeQuery = true, value = """
+		SELECT s.*
+		  FROM stock s
+		 WHERE s.is_active = true
+		   AND s.stock_code IN (:codes)
+		   AND (s.stock_name ILIKE '%' || :keyword || '%' OR s.stock_code LIKE :keyword || '%')
+		 ORDER BY CASE WHEN s.stock_code LIKE :keyword || '%' THEN 0
+		               WHEN s.stock_name ILIKE :keyword || '%' THEN 1
+		               ELSE 2 END,
+		          s.stock_name COLLATE "ko-KR-x-icu"
+		 LIMIT :size
+		""")
+	List<Stock> searchByKeywordWithin(String keyword, List<String> codes, int size);
 }

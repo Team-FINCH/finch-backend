@@ -12,6 +12,7 @@ import com.finch.domain.watchlist.exception.WatchlistErrorCode;
 import com.finch.domain.watchlist.repository.WatchlistItemRepository;
 import com.finch.domain.watchlist.repository.WatchlistRow;
 import com.finch.global.exception.CustomException;
+import com.finch.global.util.StockUniverse;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -41,6 +42,7 @@ public class WatchlistService {
 	private final StockService stockService;
 	private final PriceQueryPort priceQueryPort;
 	private final HoldingQueryPort holdingQueryPort;
+	private final StockUniverse universe;
 
 	/**
 	 * 등록 (apiSpec 6.3). 판정 순서는 11.2 표 그대로 — 종목 존재 → 중복 → 한도.
@@ -95,9 +97,11 @@ public class WatchlistService {
 	 */
 	@Transactional(readOnly = true)
 	public WatchlistRes list(Long userId, WatchlistSort sort) {
-		List<WatchlistRow> rows = sort == WatchlistSort.NAME
+		List<WatchlistRow> rows = (sort == WatchlistSort.NAME
 			? watchlistItemRepository.findRowsByName(userId)
-			: watchlistItemRepository.findRowsByRegistered(userId);
+			: watchlistItemRepository.findRowsByRegistered(userId))
+			// 종목 범위가 좁혀지기 전에 담긴 종목은 숨긴다 — 상세로 가면 404 라 목록에 있으면 갈 곳이 없다. 행은 지우지 않는다.
+			.stream().filter(row -> universe.contains(row.getStockCode())).toList();
 
 		List<String> codes = rows.stream().map(WatchlistRow::getStockCode).toList();
 		Map<String, PriceSnapshot> prices = priceQueryPort.latestAll(codes);

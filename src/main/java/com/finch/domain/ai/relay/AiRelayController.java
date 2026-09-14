@@ -1,7 +1,10 @@
 package com.finch.domain.ai.relay;
 
 import com.finch.domain.ai.service.WikiThesisService;
+import com.finch.domain.stock.exception.StockErrorCode;
+import com.finch.global.exception.CustomException;
 import com.finch.global.security.LoginUser;
+import com.finch.global.util.StockUniverse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -37,10 +40,19 @@ public class AiRelayController {
 
 	private final AiRelayService relayService;
 	private final WikiThesisService wikiThesisService;
+	private final StockUniverse universe;
 
+	/**
+	 * 종목 범위({@link StockUniverse}) 밖은 AI 로 넘기지 않고 {@code STOCK_NOT_FOUND} 다. 위 "종목 존재를 미리 검사하지 않는다" 의
+	 * 예외다 — 존재 판정이 아니라 <b>서비스 범위</b> 판정이고, 종목 분석은 호출마다 LLM 을 부르므로 범위 밖 요청이 AI 서버에 닿으면
+	 * 그만큼 크레딧이 나간다. 범위 안 종목의 존재 여부는 여전히 AI 가 판정한다.
+	 */
 	@PostMapping("/stocks/{stockCode}/analysis")
 	public ResponseEntity<JsonNode> analysis(@LoginUser long userId, @PathVariable String stockCode,
 		@RequestBody(required = false) JsonNode body) {
+		if (!universe.contains(stockCode)) {
+			throw new CustomException(StockErrorCode.STOCK_NOT_FOUND);
+		}
 		return relayService.relay(AiRoute.STOCK_ANALYSIS, Map.of("ticker", stockCode), null, userId, body);
 	}
 

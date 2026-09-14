@@ -13,6 +13,10 @@ kakao:
   client-secret: test-client-secret
 
 finch:
+  universe:
+    # 테스트는 시드 300종목 전체를 전제한다 (검색·주문·관심 테스트가 두산·LG 등 범위 밖 종목을 쓴다). 범위 판정 자체는
+    # StockUniverseGateTest 가 enabled=true 로 따로 띄워 본다.
+    enabled: false
   price:
     fake:
       # 배경 스레드가 매초 캐시를 흔들면 stale 판정처럼 시각에 기대는 테스트가 불안정해진다.

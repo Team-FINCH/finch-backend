@@ -6,6 +6,7 @@ import com.finch.domain.stock.port.PriceQueryPort;
 import com.finch.domain.stock.port.PriceQueryPort.PriceSnapshot;
 import com.finch.global.apiPayload.code.GeneralErrorCode;
 import com.finch.global.exception.CustomException;
+import com.finch.global.util.StockUniverse;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -36,16 +37,20 @@ public class PriceController {
 	private static final int MAX_CODES = 50;
 
 	private final PriceQueryPort priceQueryPort;
+	private final StockUniverse universe;
 
 	/**
 	 * 파라미터 이름은 필드 표기와 같은 계열인 {@code stockCodes} 로 확정돼 있다 (apiSpec 5.5 — {@code codes}·{@code tickers} 아님).
 	 * <p>
 	 * 검증을 {@code @Size} 가 아니라 손으로 하는 이유 — {@code ?stockCodes=} 처럼 빈 값이 오면 스프링이 빈 문자열 하나짜리
 	 * 목록으로 바꿔서 크기가 1 이 된다. 공백을 걷어낸 뒤에 세어야 "빈 값" 과 "한 건" 이 구분된다.
+	 * <p>
+	 * 종목 범위({@link StockUniverse}) 밖 코드는 검증을 지난 뒤 <b>조용히 뺀다</b> — apiSpec 5.5 "존재하지 않는 코드는 items 에서
+	 * 제외한다" 와 같은 취급이다. 전부 범위 밖이면 빈 {@code items} 다. 관심 신호도 남기지 않으므로 폴링이 그 종목을 부르지 않는다.
 	 */
 	@GetMapping("/prices")
 	public PricesRes prices(@RequestParam List<String> stockCodes) {
-		List<String> codes = normalize(stockCodes);
+		List<String> codes = universe.filter(normalize(stockCodes));
 		Map<String, PriceSnapshot> prices = priceQueryPort.latestAll(codes);
 		return new PricesRes(codes.stream()
 			.map(code -> PricesRes.Item.of(code, prices.getOrDefault(code, PriceSnapshot.missing())))

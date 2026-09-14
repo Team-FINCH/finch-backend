@@ -13,13 +13,16 @@ import com.finch.domain.stock.port.PriceQueryPort;
 import com.finch.domain.stock.port.PriceQueryPort.PriceSnapshot;
 import com.finch.global.config.SecurityConfig;
 import com.finch.global.security.JwtProvider;
+import com.finch.global.util.StockUniverse;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,6 +51,15 @@ class PriceControllerTest {
 
 	@MockitoBean
 	private JwtProvider jwtProvider;
+
+	/** 종목 범위는 이 테스트의 관심사가 아니다 — 전부 통과시킨다. 범위 판정은 {@code StockUniverseGateTest}. */
+	@MockitoBean
+	private StockUniverse universe;
+
+	@BeforeEach
+	void universePassesEverything() {
+		given(universe.filter(any())).willAnswer(invocation -> List.copyOf(invocation.<Collection<String>>getArgument(0)));
+	}
 
 	@Test
 	@DisplayName("items 는 stockCode · 시세 셋 · asOf · stale 이고 값 없음은 넷 다 null 이다")

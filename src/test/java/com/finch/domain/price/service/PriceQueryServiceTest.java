@@ -9,6 +9,7 @@ import com.finch.domain.price.cache.PriceCache;
 import com.finch.domain.price.cache.PriceEntry;
 import com.finch.domain.stock.port.PriceQueryPort;
 import com.finch.domain.stock.port.PriceQueryPort.PriceSnapshot;
+import com.finch.global.util.StockUniverse;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -162,7 +163,8 @@ class PriceQueryServiceTest {
 	// ---- helpers ----
 
 	private PriceQueryService serviceAt(Instant instant) {
-		return new PriceQueryService(priceCache, interestRegistry, properties, Clock.fixed(instant, ZoneOffset.UTC));
+		return new PriceQueryService(priceCache, interestRegistry, properties, StockUniverse.unrestricted(),
+			Clock.fixed(instant, ZoneOffset.UTC));
 	}
 
 	/** 테스트마다 다른 종목코드를 쓴다 — 캐시가 컨테이너에 공유돼 앞 테스트의 값이 남는다. */
