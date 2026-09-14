@@ -16,7 +16,7 @@ import org.springframework.http.HttpStatus;
 public enum OrderErrorCode implements BaseErrorCode {
 
 	ORDER_QUANTITY_INVALID(HttpStatus.BAD_REQUEST, "주문 수량은 1주 이상이어야 합니다"),
-	ORDER_MARKET_CLOSED(HttpStatus.CONFLICT, "지금은 주문할 수 없어요 (거래 시간 09:00~15:30)"),
+	ORDER_MARKET_CLOSED(HttpStatus.CONFLICT, "지금은 주문할 수 없어요 (거래 시간 09:00~15:30, 16:00~20:00)"),
 	/** detail 에 거래정지 사유를 싣는다 (apiSpec 7.2). */
 	ORDER_STOCK_SUSPENDED(HttpStatus.CONFLICT, "거래정지 종목은 주문할 수 없어요"),
 	/**

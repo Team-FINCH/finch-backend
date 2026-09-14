@@ -120,7 +120,7 @@ public class PriceQueryService implements PriceQueryPort {
 	 *       "시세 지연" 을 띄우되 가격은 계속 보여준다.</li>
 	 *   <li><b>정상</b> — {@code stale=false}.</li>
 	 * </ul>
-	 * <b>수신 끊김은 정규장 중에만 판정한다</b> ({@link MarketClock#isOpen}). 장 밖에서는 체결이 없어 마지막 값이 곧 현재가다 —
+	 * <b>수신 끊김은 장 시간(정규장·애프터마켓) 중에만 판정한다</b> ({@link MarketClock#isOpen}). 장 밖에서는 체결이 없어 마지막 값이 곧 현재가다 —
 	 * 웹소켓 티어(S12)는 체결이 올 때만 캐시를 쓰므로, 장 밖에 시각 규칙을 그대로 두면 15:30 부터 30종목 전부가 "시세 지연" 이 된다.
 	 * 폴링 티어는 값이 같아도 매 틱 다시 쓰기 때문에 이 차이가 드러나지 않았었다. 값 없음은 장 밖에서도 {@code stale=true} 다 —
 	 * 값이 없는 것과 값이 오래된 것은 다르다.

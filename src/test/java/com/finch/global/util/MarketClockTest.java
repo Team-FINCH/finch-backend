@@ -25,7 +25,7 @@ class MarketClockTest {
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
 	@ParameterizedTest(name = "{0} → 열림={1}")
-	@DisplayName("정규장은 평일 09:00~15:30 이고 양 끝을 포함한다")
+	@DisplayName("장은 평일 정규장 09:00~15:30 과 애프터마켓 16:00~20:00 이고 양 끝을 포함한다")
 	@CsvSource({
 		// 2026-09-07 은 월요일이다.
 		"2026-09-07T08:59:59, false",
@@ -33,6 +33,11 @@ class MarketClockTest {
 		"2026-09-07T12:00:00, true",
 		"2026-09-07T15:30:00, true",
 		"2026-09-07T15:30:01, false",
+		"2026-09-07T15:59:59, false",
+		"2026-09-07T16:00:00, true",
+		"2026-09-07T18:00:00, true",
+		"2026-09-07T20:00:00, true",
+		"2026-09-07T20:00:01, false",
 		"2026-09-07T23:59:59, false",
 	})
 	void sessionBoundaries(LocalDateTime now, boolean expected) {
@@ -81,8 +86,8 @@ class MarketClockTest {
 
 		assertThat(clock.sessionNow()).isEqualTo(session);
 		assertThat(clock.nextChangeAt()).isEqualTo(ZonedDateTime.of(nextChange, KST).toInstant());
-		// 애프터마켓은 시세만 살아 있고 주문은 받지 않는다 — isOpen 은 정규장만이다.
-		assertThat(clock.isOpen()).isEqualTo(session == MarketClock.Session.REGULAR);
+		// 주문은 닫힘이 아닌 모든 세션에서 받는다 — 정규장·애프터마켓 둘 다.
+		assertThat(clock.isOpen()).isEqualTo(session != MarketClock.Session.CLOSED);
 	}
 
 	@Test

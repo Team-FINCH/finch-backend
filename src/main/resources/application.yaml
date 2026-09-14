@@ -273,7 +273,7 @@ finch:
       codes: *universe-codes
 
   market:
-    # 평일 09:00~15:30(KST) 밖에서도 장이 열린 것으로 본다. 시연·테스트 전용이라 운영은 false 다.
+    # 장 시간(평일 09:00~15:30·16:00~20:00 KST) 밖에서도 장이 열린 것으로 본다. 시연·테스트 전용이라 운영은 false 다.
     # 발표(9/28)는 장 마감 뒤일 수 있고, 그때 주문이 전부 ORDER_MARKET_CLOSED 로 막히면 데모가 성립하지 않는다.
     always-open: false
 

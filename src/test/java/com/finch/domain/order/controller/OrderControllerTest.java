@@ -129,7 +129,7 @@ class OrderControllerTest {
 			mockMvc.perform(place(BUY_BODY))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.code").value("ORDER_MARKET_CLOSED"))
-				.andExpect(jsonPath("$.message").value("지금은 주문할 수 없어요 (거래 시간 09:00~15:30)"));
+				.andExpect(jsonPath("$.message").value("지금은 주문할 수 없어요 (거래 시간 09:00~15:30, 16:00~20:00)"));
 		}
 
 		@Test

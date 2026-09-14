@@ -65,7 +65,7 @@ public record FinchProperties(@DefaultValue Market market, @DefaultValue Http ht
 	 * 장 시간 판정 ({@code MarketClock}).
 	 *
 	 * @param alwaysOpen 장 시간을 무시하고 항상 열린 것으로 본다. 시연·테스트 전용이고 운영에서는 false 다.
-	 *                   주문(apiSpec 7.2)이 평일 09:00~15:30 밖에서 전부 막히면 발표 시간대에 데모가 불가능하다.
+	 *                   주문(apiSpec 7.2)이 장 시간(평일 09:00~15:30·16:00~20:00) 밖에서 전부 막히면 발표 시간대에 데모가 불가능하다.
 	 */
 	public record Market(@DefaultValue("false") boolean alwaysOpen) {
 	}

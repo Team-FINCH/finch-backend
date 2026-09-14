@@ -12,11 +12,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
- * 지금이 정규장 시간인지 판정한다. 주문 접수(apiSpec 7.2 1단계)와 시세 수집이 같은 답을 봐야 하므로
+ * 지금이 장 시간인지 판정한다. 주문 접수(apiSpec 7.2 1단계)와 시세 stale 판정·시장 상태(apiSpec 5.8)가 같은 답을 봐야 하므로
  * <b>판정하는 곳을 여기 하나로 둔다.</b>
  * <p>
- * 정규장은 평일 09:00~15:30 (KST) 이고 <b>양 끝을 포함</b>한다. 15:30:00 에 낸 주문은 받고
- * 15:30:01 은 거절한다 — 마감 시각 자체는 아직 장 안이다.
+ * 장은 평일 정규장 09:00~15:30 과 애프터마켓 16:00~20:00 (KST) 이고 <b>양 끝을 포함</b>한다. 15:30:00 에 낸 주문은 받고
+ * 15:30:01 은 거절한다 — 마감 시각 자체는 아직 장 안이다. 20:00 도 같다.
  * <p>
  * <b>공휴일을 다루지 않는다.</b> 휴장일 달력을 어디선가 받아 와야 하는데 그 출처가 MVP 범위 밖이다.
  * 대신 {@code finch.market.always-open} 으로 장 시간 판정을 통째로 끌 수 있게 했다 — 발표(9/28)가
@@ -58,18 +58,18 @@ public class MarketClock {
 		this.clock = clock;
 	}
 
+	/**
+	 * 주문을 받는 시간인가. <b>정규장(09:00~15:30)과 애프터마켓(16:00~20:00) 둘 다</b>다 — KRX 가 애프터마켓에서 전 종목(ETF 제외) 매매를
+	 * 받고 시세도 그동안 움직이므로, 가격은 바뀌는데 주문만 막히면 사용자가 이유를 알 수 없다. 서비스 종목 30개에 ETF 는 없다.
+	 * 15:30~16:00 사이와 20:00 이후·주말은 닫힘이다. 세션 판정은 {@link #sessionNow()} 하나이고 여기서는 "닫힘이 아닌가" 만 본다.
+	 */
 	public boolean isOpen() {
-		if (properties.market().alwaysOpen()) {
-			return true;
-		}
-		LocalDateTime now = LocalDateTime.now(clock.withZone(KST));
-		return isWeekday(now.getDayOfWeek()) && isWithinSession(now.toLocalTime());
+		return sessionNow() != Session.CLOSED;
 	}
 
 	/**
-	 * 시세가 살아 움직이는 구간 (apiSpec 5.8). 정규장에 더해 <b>KRX 애프터마켓(16:00~20:00, 2026-09-14 도입)</b>도 체결이 이어진다 —
-	 * 웹소켓 티어가 그 체결을 그대로 받으므로 프론트는 이 동안 시세를 계속 물어야 한다. {@link #isOpen()}(주문 접수)과는 다른
-	 * 질문이다: 애프터마켓에 주문을 받을지는 별개 결정이고, 지금은 정규장만 받는다.
+	 * 지금이 어느 세션인가 (apiSpec 5.8). 정규장에 더해 <b>KRX 애프터마켓(16:00~20:00, 2026-09-14 도입)</b>도 체결이 이어진다 —
+	 * 웹소켓 티어가 그 체결을 그대로 받으므로 프론트는 이 동안 시세를 계속 물어야 하고, 주문도 받는다({@link #isOpen()}).
 	 * {@code always-open} 이면 {@link Session#REGULAR} — 시연 중에는 시세도 주문도 항상 살아 있는 것으로 본다.
 	 */
 	public Session sessionNow() {
@@ -123,11 +123,11 @@ public class MarketClock {
 		return !time.isBefore(OPEN) && !time.isAfter(CLOSE);
 	}
 
-	/** 하루의 시세 세션. 주문 가능 여부가 아니다 — 그것은 {@link #isOpen()} 이다. */
+	/** 하루의 장 세션. {@link #isOpen()} 은 CLOSED 가 아닌 것이다. */
 	public enum Session {
 		/** 정규장 09:00~15:30. 주문·시세 모두 살아 있다. */
 		REGULAR,
-		/** 애프터마켓 16:00~20:00. 시세는 살아 있고 주문은 (지금은) 받지 않는다. */
+		/** KRX 애프터마켓 16:00~20:00 (2026-09-14 도입). 정규장과 같이 주문·시세 모두 살아 있다. */
 		AFTER,
 		/** 그 밖. 체결이 없어 마지막 값이 곧 현재가다. */
 		CLOSED
