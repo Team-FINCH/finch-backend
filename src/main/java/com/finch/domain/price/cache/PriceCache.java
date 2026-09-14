@@ -49,6 +49,17 @@ public class PriceCache {
 		redisTemplate.opsForValue().set(key(stockCode), objectMapper.writeValueAsString(entry));
 	}
 
+	/**
+	 * 값이 없을 때만 넣는다 ({@code SETNX}). 실시간 티어가 접속 직후 REST 로 초기값을 채울 때 쓴다 — 그 사이 체결이 먼저 들어왔으면
+	 * 그쪽이 더 새 값이라 덮으면 안 된다. "읽고 없으면 쓴다" 두 번 왕복은 그 틈에 체결이 끼어들 수 있어 원자적 한 번으로 한다.
+	 *
+	 * @return 넣었으면 true, 이미 값이 있어 건너뛰었으면 false
+	 */
+	public boolean putIfAbsent(String stockCode, PriceEntry entry) {
+		return Boolean.TRUE.equals(
+			redisTemplate.opsForValue().setIfAbsent(key(stockCode), objectMapper.writeValueAsString(entry)));
+	}
+
 	public Optional<PriceEntry> get(String stockCode) {
 		return Optional.ofNullable(read(stockCode, redisTemplate.opsForValue().get(key(stockCode))));
 	}
