@@ -2,7 +2,6 @@ package com.finch.domain.order.repository;
 
 import com.finch.domain.order.entity.Trade;
 import java.util.List;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
@@ -16,10 +15,30 @@ public interface TradeRepository extends JpaRepository<Trade, Long> {
 	List<Trade> findByAccountIdOrderByIdDesc(Long accountId);
 
 	/**
-	 * 내부 API 의 커서 페이지 (apiSpec 9.2). "이 id 보다 작은 것" 을 최신순으로 {@code size + 1} 건 — {@code ix_trade_account_id_desc}
-	 * 가 이 순서 그대로다. 첫 페이지는 호출자가 {@code Long.MAX_VALUE} 를 넘긴다 ({@code TransactionQueryService} 와 같은 규칙).
+	 * 내부 API 의 커서 페이지 (apiSpec 9.2). "이 id 보다 작은 것" 을 최신순으로 {@code limit}({@code size + 1}) 건 —
+	 * {@code ix_trade_account_id_desc} 가 이 순서 그대로다. 첫 페이지는 호출자가 {@code Long.MAX_VALUE} 를 넘긴다
+	 * ({@code TransactionQueryService} 와 같은 규칙).
+	 * <p>
+	 * <b>원장 {@code ledger_entry} 를 조인하는 네이티브 쿼리다.</b> 체결 직후 예수금({@code cashBalanceAfter})은 원장 행에만 있고,
+	 * order 가 ledger 의 Entity 를 import 하지 않으려면 테이블 조인 + 프로젝션뿐이다 (backConvention 2.4 규칙 4).
+	 * {@code uq_trade_ledger} 로 체결과 원장이 1:1 이라 행 수가 늘지 않는다.
 	 */
-	List<Trade> findByAccountIdAndIdLessThanOrderByIdDesc(Long accountId, long id, Pageable pageable);
+	@Query(nativeQuery = true, value = """
+		SELECT t.id                  AS "tradeId",
+		       t.stock_code          AS "stockCode",
+		       t.side                AS "side",
+		       t.executed_price      AS "price",
+		       t.quantity            AS "quantity",
+		       t.executed_at         AS "executedAt",
+		       le.cash_balance_after AS "cashBalanceAfter"
+		  FROM trade t
+		  JOIN ledger_entry le ON le.id = t.ledger_entry_id
+		 WHERE t.account_id = :accountId
+		   AND t.id < :cursor
+		 ORDER BY t.id DESC
+		 LIMIT :limit
+		""")
+	List<TradeSummaryRow> findInternalPage(Long accountId, long cursor, int limit);
 
 	/**
 	 * 계좌의 종목별 <b>마지막 매수</b> 체결 (알림함 apiSpec 6.4 — "왜 담으셨나요?" 가 가리키는 매수). 종목마다 한 행이다.

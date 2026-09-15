@@ -8,7 +8,6 @@ import com.finch.global.paging.CursorCodec;
 import com.finch.global.paging.CursorPage;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,8 +36,7 @@ public class TradeQueryService {
 	public CursorPage<TradeSummaryRes> listForInternal(Long userId, String cursor, int size) {
 		Long accountId = accountService.getBalance(userId).accountId();
 		long before = cursor == null ? Long.MAX_VALUE : cursorCodec.decode(cursor);
-		List<TradeSummaryRes> rows = tradeRepository
-			.findByAccountIdAndIdLessThanOrderByIdDesc(accountId, before, PageRequest.of(0, size + 1))
+		List<TradeSummaryRes> rows = tradeRepository.findInternalPage(accountId, before, size + 1)
 			.stream().map(TradeSummaryRes::from).toList();
 		return CursorPage.of(rows, size, TradeSummaryRes::tradeId, cursorCodec);
 	}

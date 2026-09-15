@@ -148,7 +148,7 @@ class InternalApiTest {
 		}
 
 		@Test
-		@DisplayName("trades — 키가 trades 이고 tradeId·stockCode·side·price·quantity·executedAt(KST), 최신순, 커서 페이징 기본 100")
+		@DisplayName("trades — 키가 trades 이고 tradeId·stockCode·side·price·quantity·executedAt(KST)·cashBalanceAfter, 최신순, 커서 페이징 기본 100")
 		void trades() throws Exception {
 			Long userId = tradedUser();
 			priceCache.put("005930", new PriceEntry(72_000L, 72_000L, Instant.now()));
@@ -163,7 +163,11 @@ class InternalApiTest {
 				.andExpect(jsonPath("$.trades[0].stockCode").value("005930"))
 				.andExpect(jsonPath("$.trades[0].tradeId").isNumber())
 				.andExpect(jsonPath("$.trades[0].executedAt").value(org.hamcrest.Matchers.endsWith("+09:00")))
+				// 체결 직후 예수금 — 30만 + 7.2만 × 3 = 51.6만, 매수 직후는 100만 − 70만 = 30만.
+				.andExpect(jsonPath("$.trades[0].cashBalanceAfter").value(516000))
 				.andExpect(jsonPath("$.trades[1].side").value("BUY"))
+				.andExpect(jsonPath("$.trades[1].cashBalanceAfter").value(300000))
+				.andExpect(jsonPath("$.trades[0].fee").doesNotExist())
 				.andExpect(jsonPath("$.trades[0].realizedProfit").doesNotExist())
 				.andExpect(jsonPath("$.items").doesNotExist())
 				.andExpect(jsonPath("$.nextCursor").value(nullValue()))
