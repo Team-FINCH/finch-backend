@@ -45,7 +45,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * 중계 컨트롤러의 경로 11종이 JWT 로 보호되고 서비스에 올바른 라우트·경로 변수·본문을 넘기는지, 그리고 서비스가 던진 예외가
+ * 중계 컨트롤러의 경로 13종이 JWT 로 보호되고 서비스에 올바른 라우트·경로 변수·본문을 넘기는지, 그리고 서비스가 던진 예외가
  * 계약대로 나가는지(상태·code·requestId·Retry-After). 재포장·에러 규칙 자체는 {@code AiRelayServiceTest} 가 본다.
  */
 @WebMvcTest(AiRelayController.class)
@@ -109,7 +109,7 @@ class AiRelayControllerTest {
 	}
 
 	@Test
-	@DisplayName("나머지 9종의 경로·메서드가 라우트에 맞게 서비스로 간다")
+	@DisplayName("나머지 11종의 경로·메서드가 라우트에 맞게 서비스로 간다")
 	void otherRoutes() throws Exception {
 		givenLoggedIn(42L);
 		given(relayService.relay(any(), any(), any(), eq(42L), any()))
@@ -131,6 +131,8 @@ class AiRelayControllerTest {
 		mockMvc.perform(authed(put("/api/v1/ai/wiki/theses/005930")).contentType(MediaType.APPLICATION_JSON).content("{}"))
 			.andExpect(status().isOk());
 		mockMvc.perform(authed(delete("/api/v1/ai/wiki/facts/f1"))).andExpect(status().isOk());
+		mockMvc.perform(authed(get("/api/v1/ai/chat/conversations/conv_01/messages"))).andExpect(status().isOk());
+		mockMvc.perform(authed(post("/api/v1/ai/wiki/facts/f2/confirm"))).andExpect(status().isOk());
 
 		verify(relayService).relay(eq(AiRoute.CHAT), isNull(), isNull(), eq(42L), any());
 		verify(relayService).relay(eq(AiRoute.PORTFOLIO_DIAGNOSIS), isNull(), isNull(), eq(42L), isNull());
@@ -143,6 +145,9 @@ class AiRelayControllerTest {
 		verify(relayService).relay(eq(AiRoute.WIKI), isNull(), any(), eq(42L), isNull());
 		verify(wikiThesisService).update(eq(42L), eq("005930"), any());
 		verify(relayService).relay(eq(AiRoute.WIKI_FACT_DELETE), eq(Map.of("factId", "f1")), isNull(), eq(42L), isNull());
+		verify(relayService).relay(eq(AiRoute.CHAT_CONVERSATION_MESSAGES), eq(Map.of("conversationId", "conv_01")), isNull(),
+			eq(42L), isNull());
+		verify(relayService).relay(eq(AiRoute.WIKI_FACT_CONFIRM), eq(Map.of("factId", "f2")), isNull(), eq(42L), isNull());
 	}
 
 	/** apiSpec 10.1 (v0.8.8, 이슈 #56) — 매수 이유를 처음 적는 경로. 경로 변수가 없고 종목은 본문의 ticker 다. */

@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.JsonNode;
 
 /**
- * AI 중계 API 11종 (apiSpec 10.1). 한 컨트롤러에 모아 두는 이유 — 전부 같은 일({@link AiRelayService#relay})을 하고 다른 것은
+ * AI 중계 API 13종 (apiSpec 10.1). 한 컨트롤러에 모아 두는 이유 — 전부 같은 일({@link AiRelayService#relay})을 하고 다른 것은
  * 경로와 메서드뿐이다. {@link AiRoute} 가 AI 쪽 경로를, 여기 어노테이션이 우리 쪽 경로를 든다.
  * <p>
  * 본문은 {@link JsonNode} 로 받는다 — 엔드포인트별 DTO 를 두지 않는다 (apiSpec 10.3 "제네릭 변환"). 검증도 하지 않는다: 요청 형식
@@ -59,6 +59,17 @@ public class AiRelayController {
 	@PostMapping("/chat")
 	public ResponseEntity<JsonNode> chat(@LoginUser long userId, @RequestBody(required = false) JsonNode body) {
 		return relayService.relay(AiRoute.CHAT, null, null, userId, body);
+	}
+
+	/**
+	 * 대화 이력 (apiSpec 10.1, v0.8.18, 이슈 #79). 프론트가 저장해 둔 {@code conversationId} 로 채팅 화면을 복원한다. 응답은 다른 중계와 같은
+	 * 봉투 재포장이다 — 대화는 {@code content.messages} 에 있다. 남의 대화·없는 대화는 AI 가 빈 {@code messages} 로 답하므로 여기서
+	 * 소유권을 보지 않는다.
+	 */
+	@GetMapping("/chat/conversations/{conversationId}/messages")
+	public ResponseEntity<JsonNode> chatMessages(@LoginUser long userId, @PathVariable String conversationId) {
+		return relayService.relay(AiRoute.CHAT_CONVERSATION_MESSAGES, Map.of("conversationId", conversationId), null,
+			userId, null);
 	}
 
 	@PostMapping("/portfolio/diagnosis")
@@ -111,5 +122,15 @@ public class AiRelayController {
 	@DeleteMapping("/wiki/facts/{factId}")
 	public ResponseEntity<JsonNode> deleteFact(@LoginUser long userId, @PathVariable String factId) {
 		return relayService.relay(AiRoute.WIKI_FACT_DELETE, Map.of("factId", factId), null, userId, null);
+	}
+
+	/**
+	 * 위키 추측을 사실로 확정 (apiSpec 10.1, v0.8.18, 이슈 #79). 본문이 없다. 없는 id·남의 항목·삭제된 항목은 AI 의
+	 * {@code 400 INVALID_REQUEST} 한 갈래로 그대로 내려간다 — 구분하면 남의 위키 항목 존재가 드러나서 AI 가 합쳤다. 논지가 아니라 성향
+	 * 항목이라 알림함 논지 캐시({@link WikiThesisService})와 무관하다.
+	 */
+	@PostMapping("/wiki/facts/{factId}/confirm")
+	public ResponseEntity<JsonNode> confirmFact(@LoginUser long userId, @PathVariable String factId) {
+		return relayService.relay(AiRoute.WIKI_FACT_CONFIRM, Map.of("factId", factId), null, userId, null);
 	}
 }

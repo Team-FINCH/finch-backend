@@ -96,6 +96,51 @@ class AiRelayServiceTest {
 
 			assertThat(body.get("deletedFactId").asString()).isEqualTo("f1");
 		}
+
+		/**
+		 * 이슈 #79 — 대화 이력도 봉투다(AI openapi.json {@code Envelope[ChatHistoryContent]}). 메시지 한 줄의 {@code content} 는 이름만 같은
+		 * 필드라 봉투로 오인되면 안 된다 — 재포장은 최상위 {@code content} 만 본다.
+		 */
+		@Test
+		@DisplayName("대화 이력 — 봉투 재포장, conversationId·messages 는 content 아래, 메시지의 content 는 문자열 그대로, created_at 은 createdAt")
+		void repackagesConversationHistory() {
+			AiRelayService service = service(req -> json(HttpStatus.OK, """
+				{"request_id":"req_h1","generated_at":"2026-09-15T14:00:02+09:00",
+				 "data_as_of":{"price":null,"portfolio":null,"filings":null,"news":null,"macro":null},
+				 "model":"m","cached":false,
+				 "content":{"conversation_id":"conv_01","messages":[
+				   {"role":"user","content":"내 삼성전자 비중은?","created_at":"2026-09-15T14:00:00+09:00"},
+				   {"role":"assistant","content":"삼성전자는 포트폴리오의 …","created_at":"2026-09-15T14:00:01+09:00"}]},
+				 "citations":[],"freshness_warnings":[],"disclaimer":"면책"}"""));
+
+			JsonNode body = service.relay(AiRoute.CHAT_CONVERSATION_MESSAGES, Map.of("conversationId", "conv_01"), null, 42L,
+				null).getBody();
+
+			ClientRequest req = sent.getFirst();
+			assertThat(req.method()).isEqualTo(HttpMethod.GET);
+			assertThat(req.url()).isEqualTo(URI.create("https://ai.test/api/ai/v1/chat/conversations/conv_01/messages"));
+			assertThat(req.headers().getContentType()).isNull();
+			assertThat(body.propertyNames()).containsExactly("content", "requestId", "dataAsOf", "citations", "disclaimer");
+			JsonNode content = body.get("content");
+			assertThat(content.get("conversationId").asString()).isEqualTo("conv_01");
+			assertThat(content.get("messages").get(0).get("role").asString()).isEqualTo("user");
+			assertThat(content.get("messages").get(1).get("content").asString()).isEqualTo("삼성전자는 포트폴리오의 …");
+			assertThat(content.get("messages").get(0).get("createdAt").asString()).isEqualTo("2026-09-15T14:00:00+09:00");
+		}
+
+		@Test
+		@DisplayName("위키 확정 — 본문 없이 POST /wiki/facts/{factId}/confirm 으로 간다")
+		void confirmFactGoesToConfirmPath() {
+			AiRelayService service = service(req -> json(HttpStatus.OK, "{\"content\":{\"id\":\"f2\",\"source\":\"user_stated\"}}"));
+
+			JsonNode body = service.relay(AiRoute.WIKI_FACT_CONFIRM, Map.of("factId", "f2"), null, 42L, null).getBody();
+
+			ClientRequest req = sent.getFirst();
+			assertThat(req.method()).isEqualTo(HttpMethod.POST);
+			assertThat(req.url()).isEqualTo(URI.create("https://ai.test/api/ai/v1/wiki/facts/f2/confirm"));
+			assertThat(req.headers().getContentType()).isNull();
+			assertThat(body.get("content").get("source").asString()).isEqualTo("user_stated");
+		}
 	}
 
 	@Nested
