@@ -1,6 +1,7 @@
 package com.finch.domain.ledger.service;
 
 import com.finch.domain.ledger.dto.request.TransactionFilter;
+import com.finch.domain.ledger.dto.response.CashFlowRes;
 import com.finch.domain.ledger.dto.response.TransactionRes;
 import com.finch.domain.ledger.entity.LedgerType;
 import com.finch.domain.ledger.repository.TransactionQueryRepository;
@@ -8,13 +9,14 @@ import com.finch.domain.ledger.repository.TransactionRow;
 import com.finch.global.paging.CursorCodec;
 import com.finch.global.paging.CursorPage;
 import java.util.List;
+import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 매매 내역 조회 (apiSpec 8.2, featureSpec 8). 원장을 <b>화면 단위</b>로 읽는다 — 기록은 {@link LedgerService}, 조회는
- * 여기다. 둘을 나눈 이유: 기록 서비스는 {@code MANDATORY} 트랜잭션 안에서 한 줄을 남기는 일만 하고, 조회는 조인·필터·
+ * 원장 조회. 매매 내역(apiSpec 8.2, featureSpec 8)은 원장을 <b>화면 단위</b>로, AI 내부 API 입출금 이력(9.3)은 외부 현금흐름만
+ * 읽는다 — 기록은 {@link LedgerService}, 조회는 여기다. 둘을 나눈 이유: 기록 서비스는 {@code MANDATORY} 트랜잭션 안에서 한 줄을 남기는 일만 하고, 조회는 조인·필터·
  * 페이징이라 성격이 다르다. 한 클래스에 두면 "원장을 건드리는 코드"의 범위가 흐려진다.
  * <p>
  * 필터·정렬·페이징의 판정은 전부 SQL 에 있다 ({@link TransactionQueryRepository}). 여기서 하는 것은 커서를 풀고, 한 건 더
@@ -23,6 +25,13 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class TransactionQueryService {
+
+	/**
+	 * 계좌 밖과 오가는 돈 — 지급·충전·출금. {@code BUY}·{@code SELL} 은 계좌 안에서 현금과 주식이 자리를 바꾸는 것이라 빠진다.
+	 * 원장 유형이 늘면 여기서 외부 흐름인지 정해야 한다.
+	 */
+	private static final List<String> EXTERNAL_FLOWS = Stream.of(LedgerType.INITIAL_GRANT, LedgerType.DEPOSIT,
+		LedgerType.WITHDRAWAL).map(Enum::name).toList();
 
 	private final TransactionQueryRepository transactionQueryRepository;
 	private final CursorCodec cursorCodec;
@@ -46,5 +55,19 @@ public class TransactionQueryService {
 
 		List<TransactionRes> items = rows.stream().map(TransactionRes::from).toList();
 		return CursorPage.of(items, size, TransactionRes::transactionId, cursorCodec);
+	}
+
+	/**
+	 * 외부 현금흐름을 최신순으로 한 페이지 — AI 내부 API 입출금 이력 (apiSpec 9.3, 이슈 #80). AI 가 시간가중수익률의 {@code F_t} 를
+	 * 현재 현금에서 역산하지 않고 원장에서 읽게 한다. 커서·{@code size + 1} 규칙은 {@link #list} 와 같다.
+	 *
+	 * @param size 페이지 크기. 내부 API 는 기본·최대 100 ({@code PageSize.forInternal}) — 검증은 호출자가 했다.
+	 */
+	@Transactional(readOnly = true)
+	public CursorPage<CashFlowRes> listCashFlows(Long userId, String cursor, int size) {
+		long before = cursor == null ? Long.MAX_VALUE : cursorCodec.decode(cursor);
+		List<CashFlowRes> items = transactionQueryRepository.findCashFlowPage(userId, EXTERNAL_FLOWS, before, size + 1)
+			.stream().map(CashFlowRes::from).toList();
+		return CursorPage.of(items, size, CashFlowRes::entryId, cursorCodec);
 	}
 }

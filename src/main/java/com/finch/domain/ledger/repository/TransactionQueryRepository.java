@@ -6,8 +6,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
 
 /**
- * `GET /transactions` 전용 읽기 쿼리 (apiSpec 8.2, erd.md §5). {@code ledger_entry} 를 기준으로 상세 테이블과
- * 종목명을 붙여 화면 한 행을 만든다.
+ * 원장 읽기 전용 쿼리. `GET /transactions` (apiSpec 8.2, erd.md §5)는 {@code ledger_entry} 를 기준으로 상세 테이블과
+ * 종목명을 붙여 화면 한 행을 만들고, AI 내부 API 입출금 이력(apiSpec 9.3)은 외부 현금흐름 원장 행만 그대로 읽는다.
  * <p>
  * <b>네이티브 SQL 인 이유</b> — ledger 는 1층(피참조 전용)이라 trade·deposit·withdrawal·stock 의 Entity 를 import
  * 할 수 없다 (backConvention 2.4 규칙 2·3). JPQL 은 엔티티가 있어야 조인할 수 있으므로 쓸 수 없고, 규칙 4 가 허용한
@@ -70,4 +70,25 @@ public interface TransactionQueryRepository extends Repository<LedgerEntry, Long
 		 LIMIT :limit
 		""")
 	List<TransactionRow> findPageByType(Long userId, String type, long cursor, int limit);
+
+	/**
+	 * 외부 현금흐름 — AI 내부 API 입출금 이력 (apiSpec 9.3, 이슈 #80). 화면용 {@link #findPage} 와 달리 상세 테이블을 조인하지 않고
+	 * {@code cash_delta} 를 <b>부호째</b> 준다 — AI 는 방향을 유형이 아니라 부호로 읽는다. {@code types} 는 {@code LedgerType.name()}
+	 * 목록이고 어떤 유형이 외부 흐름인지는 호출자({@code TransactionQueryService})가 정한다. 계좌를 {@code user_id} 로 찾는 이유는 위와 같다.
+	 */
+	@Query(nativeQuery = true, value = """
+		SELECT le.id                 AS "id",
+		       le.type               AS "type",
+		       le.cash_delta         AS "cashDelta",
+		       le.cash_balance_after AS "cashBalanceAfter",
+		       le.occurred_at        AS "occurredAt"
+		  FROM ledger_entry le
+		  JOIN account a ON a.id = le.account_id
+		 WHERE a.user_id = :userId
+		   AND le.type IN (:types)
+		   AND le.id < :cursor
+		 ORDER BY le.id DESC
+		 LIMIT :limit
+		""")
+	List<CashFlowRow> findCashFlowPage(Long userId, List<String> types, long cursor, int limit);
 }

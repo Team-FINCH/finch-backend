@@ -1,5 +1,6 @@
 package com.finch.domain.ai.controller;
 
+import com.finch.domain.ai.dto.response.InternalCashFlowsRes;
 import com.finch.domain.ai.dto.response.InternalPortfolioRes;
 import com.finch.domain.ai.dto.response.InternalTradesRes;
 import com.finch.domain.ai.service.InternalQueryService;
@@ -39,5 +40,13 @@ public class InternalPortfolioController {
 		@RequestParam(required = false) String cursor, @RequestParam(required = false) Integer size) {
 		String pageCursor = cursor == null || cursor.isBlank() ? null : cursor;
 		return internalQueryService.trades(userId, pageCursor, PageSize.forInternal(size));
+	}
+
+	/** 입출금 이력 (apiSpec 9.3). 헤더·커서·{@code size} 처리는 {@link #trades} 와 같다. */
+	@GetMapping("/cash-flows")
+	public InternalCashFlowsRes cashFlows(@RequestHeader(value = USER_HEADER, required = false) String userId,
+		@RequestParam(required = false) String cursor, @RequestParam(required = false) Integer size) {
+		String pageCursor = cursor == null || cursor.isBlank() ? null : cursor;
+		return internalQueryService.cashFlows(userId, pageCursor, PageSize.forInternal(size));
 	}
 }
