@@ -12,8 +12,14 @@ public interface WatchlistItemRepository extends JpaRepository<WatchlistItem, Lo
 	 * 정렬 두 가지가 DB 몫이다 (erd.md §2.9). 하나로 합치지 않는 이유는 S4 의 두 쿼리와 같다 — 정렬 조건을 파라미터로 넣으면
 	 * 플래너가 인덱스를 고르지 못한다.
 	 */
+	/**
+	 * {@code market}·{@code suspended} 는 v0.8.20 에서 더했다 (이슈 #67). 프론트가 관심 목록 행에 {@code 종목코드 · 시장} 을 적고
+	 * 거래정지 태그를 붙이는데, 우회로가 없었다 — {@code GET /stocks/{stockCode}} 는 "최근 본 종목" 에 기록을 남기고
+	 * ({@code StockViewedEvent}) {@code GET /stocks/prices} 에는 두 필드가 없다. <b>{@code stock} 을 이미 조인하고 있어 조인이 늘지 않는다.</b>
+	 */
 	String SELECT = """
-		SELECT w.stock_code AS "stockCode", s.stock_name AS "stockName", w.created_at AS "registeredAt"
+		SELECT w.stock_code AS "stockCode", s.stock_name AS "stockName", s.market AS "market",
+		       s.suspended AS "suspended", w.created_at AS "registeredAt"
 		  FROM watchlist_item w
 		  JOIN stock s ON s.stock_code = w.stock_code
 		 WHERE w.user_id = :userId

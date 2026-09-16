@@ -84,6 +84,9 @@ class WatchlistServiceTest {
 			assertThat(res.items().getFirst().stockCode()).isEqualTo("005930");
 			assertThat(res.items().getFirst().stockName()).isEqualTo("삼성전자");
 			assertThat(res.items().getFirst().registeredAt().getOffset().getTotalSeconds()).isEqualTo(9 * 3600);
+			// v0.8.20 (이슈 #67). 프로젝션이 실제 DB 에서 매핑되는지까지 본다 — market 은 VARCHAR 이고 받는 쪽은 String 이다.
+			assertThat(res.items().getFirst().market()).isEqualTo("KOSPI");
+			assertThat(res.items().getFirst().suspended()).isFalse();
 		}
 
 		@Test
@@ -115,6 +118,11 @@ class WatchlistServiceTest {
 			// 관심은 매매가 아니다 — 거래정지 종목도 담기고 화면이 뱃지로 알린다.
 			watchlistService.add(userId, suspended);
 			assertThat(codes(userId, WatchlistSort.REGISTERED)).containsExactly(suspended);
+			// 그 뱃지의 근거가 응답에 실려야 한다 (v0.8.20, 이슈 #67). 화면이 종목 상세를 따로 부르면
+			// 그 호출이 "최근 본 종목" 을 덮으므로 여기서 주는 것이 유일한 경로다.
+			WatchlistRes.Item item = watchlistService.list(userId, WatchlistSort.REGISTERED).items().getFirst();
+			assertThat(item.suspended()).isTrue();
+			assertThat(item.market()).isEqualTo("KOSPI");
 		}
 
 		@Test

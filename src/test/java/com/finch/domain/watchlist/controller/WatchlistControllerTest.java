@@ -57,13 +57,13 @@ class WatchlistControllerTest {
 	private JwtProvider jwtProvider;
 
 	@Test
-	@DisplayName("응답은 count · maxCount · items 이고 items 는 시세 셋 · held · registeredAt 을 담는다")
+	@DisplayName("응답은 count · maxCount · items 이고 items 는 market · suspended · 시세 셋 · held · registeredAt 을 담는다")
 	void returnsContractedBody() throws Exception {
 		givenLoggedIn(42L);
 		given(watchlistService.list(42L, WatchlistSort.REGISTERED)).willReturn(new WatchlistRes(2, 50, List.of(
-			new WatchlistRes.Item("005930", "삼성전자", 73_500L, -900L, new BigDecimal("-1.21"), true,
+			new WatchlistRes.Item("005930", "삼성전자", "KOSPI", false, 73_500L, -900L, new BigDecimal("-1.21"), true,
 				OffsetDateTime.parse("2026-09-02T14:03:00+09:00")),
-			new WatchlistRes.Item("000660", "SK하이닉스", null, null, null, false,
+			new WatchlistRes.Item("000660", "SK하이닉스", "KOSDAQ", true, null, null, null, false,
 				OffsetDateTime.parse("2026-09-02T14:02:00+09:00")))));
 
 		mockMvc.perform(authed(get("/api/v1/watchlist")))
@@ -72,6 +72,11 @@ class WatchlistControllerTest {
 			.andExpect(jsonPath("$.maxCount").value(50))
 			.andExpect(jsonPath("$.items[0].stockCode").value("005930"))
 			.andExpect(jsonPath("$.items[0].stockName").value("삼성전자"))
+			// v0.8.20 (이슈 #67). 종목 상세(§5.2)와 같은 값이라 프론트가 KOSPI → "코스피" 매핑을 그대로 쓴다.
+			.andExpect(jsonPath("$.items[0].market").value("KOSPI"))
+			.andExpect(jsonPath("$.items[0].suspended").value(false))
+			.andExpect(jsonPath("$.items[1].market").value("KOSDAQ"))
+			.andExpect(jsonPath("$.items[1].suspended").value(true))
 			.andExpect(jsonPath("$.items[0].currentPrice").value(73500))
 			.andExpect(jsonPath("$.items[0].changeAmount").value(-900))
 			.andExpect(jsonPath("$.items[0].changeRate").value(-1.21))
