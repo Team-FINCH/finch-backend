@@ -289,9 +289,16 @@ finch:
     base-url: ${FINCH_AI_BASE_URL:http://localhost:8000}
     # 백엔드 → AI 방향의 X-Internal-Token. AI 쪽 BACKEND_SERVICE_TOKEN 과 같은 값이어야 한다. 비밀값이라 기본값이 없다.
     internal-token: ${AI_INTERNAL_TOKEN}
-    # 응답 대기 제한. AI 의 LLM 타임아웃보다 길어야 AI 가 먼저 504 LLM_TIMEOUT 을 돌려준다 — 우리가 먼저 끊으면 프론트가
-    # AI_UPSTREAM_TIMEOUT 을 받아 재시도하고 호출량만 는다. 90초는 가정값이고 AI 파트 확인 후 조정한다 (backend_story §6).
-    timeout: 90s
+    # LLM 을 기다리는 경로의 응답 대기 제한. 타임아웃이 넷 겹쳐 있고 안쪽이 먼저 터져야 한다 (이슈 #87·#90).
+    #   AI 동기 POST /chat 55초  <  여기 60초  <  Cloudflare 약 100초
+    # 55초보다 먼저 끊으면 AI 가 이미 만든 답을 우리가 버린다(그 호출의 비용은 나간 뒤다). 100초를 넘기면 Cloudflare 가
+    # 먼저 끊어 프론트가 우리 JSON 봉투가 아니라 HTML 504 를 받는다 — #87 이 그것이었고, 90초는 그 사이가 10초뿐이라
+    # 왕복에 먹혔다. 위아래 두 값 중 하나가 바뀌면 이 값도 함께 바뀐다.
+    timeout: 60s
+    # LLM 을 기다리지 않는 경로(AiRoute.quick — 채팅 작업 생성·조회)의 대기 제한. 하나는 작업을 적고 202 로 곧장
+    # 돌아오고 하나는 테이블을 한 번 읽는다. 여기에 분 단위를 주면 AI 가 멈췄을 때 2초마다 오는 폴링이 전부 그만큼
+    # 서블릿 스레드에 쌓인다.
+    quick-timeout: 10s
 
   internal:
     # /internal/v1 (AI 서버 전용, apiSpec 9장) 의 X-Internal-Token 과 대조할 값. AI 쪽 BACKEND_SERVICE_TOKEN 과 같은 값이어야 한다.
@@ -321,9 +328,15 @@ finch:
     # 아니라 PG 가 발급한 paymentKey 로 바뀌었다 (apiSpec 1.4). 여기 넣으면 ready 가 헤더 없음 400 으로 막힌다.
     # 출금(/withdrawals)은 PG 가 없어 키를 발급할 주체가 없으므로 클라이언트 UUID 로 돌아간다 — WithdrawalService 의
     # 재전송 방어는 이 한 줄이 전부다. 서비스는 재생 경로를 갖지 않는다.
+    #
+    # AI 채팅 작업 생성(/api/v1/ai/chat/jobs)은 v0.8.19 에서 들어왔다 (이슈 #84·#90). 중계 경로 중 유일하게 여기 오르는데,
+    # 부를 때마다 LLM 이 도는 새 작업이 생겨 재전송이 곧 중복 과금이기 때문이다. 재전송은 최초의 202 와 jobId 를
+    # 그대로 재생받으므로 프론트는 같은 작업을 계속 폴링한다. AI 쪽에도 같은 키로 2차 방어가 있다 (AI api-spec §4.2).
+    # 상태 조회(GET .../jobs/{jobId})는 여기 없다 — 필터가 POST 만 보고, GET 은 여러 번 불러도 같은 결과다.
     paths:
       - /api/v1/orders
       - /api/v1/withdrawals
+      - /api/v1/ai/chat/jobs
     # 처리 중 표시의 수명. 짧으면 처리가 끝나기 전에 풀려 같은 요청이 두 번 실행되고,
     # 길면 서버가 죽었을 때 재시도가 그만큼 막힌다.
     in-progress-ttl: 60s

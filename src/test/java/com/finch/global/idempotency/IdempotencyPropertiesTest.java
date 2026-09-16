@@ -27,16 +27,29 @@ class IdempotencyPropertiesTest {
 	private final IdempotencyProperties properties = bindFromApplicationYaml();
 
 	/**
-	 * apiSpec v0.8 §1.4·§4.5·§7.1·§11.1·§12 가 주문과 출금을 멱등성 키 필수로 적고 있다.
+	 * apiSpec v0.8 §1.4·§4.5·§7.1·§11.1·§12 가 주문과 출금을 멱등성 키 필수로 적고 있고, v0.8.19 §10.1 이 AI 채팅 작업
+	 * 생성을 더했다 (이슈 #84·#90) — 부를 때마다 LLM 이 도는 새 작업이 생겨 재전송이 곧 중복 과금이다.
 	 * 충전은 v0.8 에서 빠졌다 — 멱등 기준이 PG 가 발급한 {@code paymentKey} 로 바뀌었고(§4.4), 결제창을 거쳐
 	 * 돌아온 요청은 최초 호출과 다른 세션일 수 있어 클라이언트 UUID 로는 판정할 수 없다.
 	 * 명세를 고치는 MR 이 이 테스트도 함께 고쳐야 한다. 그 마찰이 의도다.
 	 */
 	@Test
-	@DisplayName("멱등성 검사 경로는 apiSpec 이 키 필수로 정한 주문·출금 둘이다 — 충전은 paymentKey 멱등이라 없다")
+	@DisplayName("멱등성 검사 경로는 주문·출금·AI 채팅 작업 생성 셋이다 — 충전은 paymentKey 멱등이라 없다")
 	void pathsMatchSpec() {
 		assertThat(properties.paths())
-			.containsExactlyInAnyOrder("/api/v1/orders", "/api/v1/withdrawals");
+			.containsExactlyInAnyOrder("/api/v1/orders", "/api/v1/withdrawals", "/api/v1/ai/chat/jobs");
+	}
+
+	/**
+	 * 작업 <b>상태 조회</b>는 목록에 없다. 필터가 POST 만 보므로 지금은 넣어도 지나치지만, 적어 두면 "중계 경로니까
+	 * 같이 넣자" 로 들어오기 쉽다 — 2초마다 오는 폴링이 전부 키를 요구받으면 프론트가 매번 새 UUID 를 지어내거나
+	 * 같은 키로 막히거나 둘 중 하나다.
+	 */
+	@Test
+	@DisplayName("AI 경로 중 목록에 오른 것은 작업 생성 하나뿐이다")
+	void onlyChatJobCreationAmongAiPaths() {
+		assertThat(properties.paths().stream().filter(path -> path.startsWith("/api/v1/ai")))
+			.containsExactly("/api/v1/ai/chat/jobs");
 	}
 
 	/** 충전 경로가 다시 들어오면 ready 가 헤더 없음 400 으로 막힌다. 이름을 못 박아 둔다. */
