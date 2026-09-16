@@ -9,8 +9,6 @@ import com.finch.domain.stock.dto.response.StockSearchRes;
 import com.finch.domain.stock.dto.response.TradabilityRes;
 import com.finch.domain.stock.entity.DailyCandle;
 import com.finch.domain.stock.entity.Stock;
-import com.finch.domain.stock.event.StockSearchedEvent;
-import com.finch.domain.stock.event.StockViewedEvent;
 import com.finch.domain.stock.exception.StockErrorCode;
 import com.finch.domain.stock.port.HoldingQueryPort;
 import com.finch.domain.stock.port.PriceQueryPort;
@@ -22,12 +20,10 @@ import com.finch.global.apiPayload.code.GeneralErrorCode;
 import com.finch.global.exception.CustomException;
 import com.finch.global.util.KstTime;
 import com.finch.global.util.StockUniverse;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,7 +32,13 @@ import org.springframework.transaction.annotation.Transactional;
  * 포트로 받는다</b> — 시세({@link PriceQueryPort})·보유({@link HoldingQueryPort})·관심({@link WatchlistQueryPort}).
  * stock(1층)이 price·portfolio·watchlist 를 직접 부르면 규칙 2 위반이다. 지금은 기본 빈이 빈 값을 준다.
  * <p>
- * "봤다"·"검색했다"는 이벤트로만 알린다 — recent(4층)를 직접 부르는 것도 역방향이다. 상세는 응답을 기다리지 않는다.
+ * "봤다"·"검색했다"는 이벤트로 알리지만 <b>발행은 여기가 아니라 {@link com.finch.domain.stock.controller.StockController}
+ * 가 한다</b>. recent(4층)를 직접 부르지 않는다는 규칙은 그대로이고, 발행 위치만 트랜잭션 밖으로 나갔다 (이슈 309).
+ * <p>
+ * <b>왜 트랜잭션 밖인가</b> — 스프링 이벤트는 기본이 동기라 리스너가 발행 지점에서 그 자리에 실행된다. 이 메서드들이
+ * {@code readOnly = true} 라 리스너는 INSERT 를 하려고 새 트랜잭션을 열어야 했고({@code REQUIRES_NEW}), 중단된 바깥
+ * 트랜잭션은 커넥션을 쥔 채 남아 <b>요청 하나가 커넥션 2개를 동시에 점유</b>했다. 풀 크기만큼의 요청이 겹치면 서로의
+ * 두 번째 커넥션을 기다리며 데드락이 됐다 (풀 4에서 동시 4건이면 재현).
  */
 @Service
 @RequiredArgsConstructor
@@ -47,14 +49,14 @@ public class StockService {
 	private final PriceQueryPort priceQueryPort;
 	private final HoldingQueryPort holdingQueryPort;
 	private final WatchlistQueryPort watchlistQueryPort;
-	private final ApplicationEventPublisher eventPublisher;
 	private final CandleSyncService candleSyncService;
 	private final StockUniverse universe;
 
 	/**
 	 * 검색 (apiSpec 5.1). 컨트롤러가 길이·범위를 검증했지만 앞뒤 공백을 걷어낸 뒤 다시 본다 — {@code " 삼"} 은 2글자 검증을
 	 * 통과하고도 검색어는 1글자다. 시세는 {@code latestAll} 로 한 번에 붙인다 (N+1 금지).
-	 * 검색 이벤트는 검증을 통과한 검색어만 발행한다.
+	 * 검색어가 2글자 미만이면 여기서 던지므로 컨트롤러의 발행 줄에 닿지 않는다 — 검증을 통과한 검색어만 기록된다.
+	 * 컨트롤러는 여기와 같은 규칙({@code strip()})으로 걷어낸 값을 싣는다.
 	 * <p>
 	 * 종목 범위({@link StockUniverse})가 켜져 있으면 범위 안에서만 찾는다 — 범위 밖 종목은 검색에 나타나지 않아야 상세로 갈 길이 없다.
 	 */
@@ -68,7 +70,6 @@ public class StockService {
 			? stockRepository.searchByKeywordWithin(trimmed, universe.codes(), size)
 			: stockRepository.searchByKeyword(trimmed, size);
 		Map<String, PriceSnapshot> prices = priceQueryPort.latestAll(stocks.stream().map(Stock::getStockCode).toList());
-		eventPublisher.publishEvent(new StockSearchedEvent(userId, trimmed));
 		return new StockSearchRes(stocks.stream()
 			.map(stock -> StockSearchRes.Item.of(stock, prices.getOrDefault(stock.getStockCode(), PriceSnapshot.missing())))
 			.toList());
@@ -76,16 +77,16 @@ public class StockService {
 
 	/**
 	 * 상세 (apiSpec 5.2). 상장폐지 종목은 404 다 — 검색에서 빠지는 종목이 상세에서만 보이면 화면이 갈 곳이 없고, 보유 중
-	 * 상장폐지는 MVP 에서 생기지 않는다 (contracts C78). 이 호출이 곧 "최근 본 종목" 기록이다 — 이벤트로 알린다.
+	 * 상장폐지는 MVP 에서 생기지 않는다 (contracts C78). 이 호출이 곧 "최근 본 종목" 기록이지만, 기록을 여는
+	 * {@code StockViewedEvent} 는 컨트롤러가 이 메서드가 끝난 뒤에 발행한다 — 여기서 발행하면 트랜잭션 안이 된다.
+	 * 없는 종목이면 여기서 던지므로 그 발행 줄에 닿지 않는다.
 	 */
 	@Transactional(readOnly = true)
 	public StockDetailRes detail(Long userId, String stockCode) {
 		Stock stock = findActive(stockCode);
 		PriceSnapshot price = priceQueryPort.latest(stockCode);
 		boolean watched = watchlistQueryPort.isWatched(userId, stockCode);
-		StockDetailRes res = StockDetailRes.of(stock, price, watched, holdingQueryPort.holdingOf(userId, stockCode));
-		eventPublisher.publishEvent(new StockViewedEvent(userId, stockCode, Instant.now()));
-		return res;
+		return StockDetailRes.of(stock, price, watched, holdingQueryPort.holdingOf(userId, stockCode));
 	}
 
 	/**

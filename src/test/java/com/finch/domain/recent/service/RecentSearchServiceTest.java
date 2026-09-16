@@ -6,6 +6,7 @@ import com.finch.TestcontainersConfiguration;
 import com.finch.domain.auth.entity.User;
 import com.finch.domain.auth.repository.UserRepository;
 import com.finch.domain.recent.dto.response.RecentSearchRes;
+import com.finch.domain.stock.controller.StockController;
 import com.finch.domain.stock.event.StockSearchedEvent;
 import com.finch.domain.stock.service.StockService;
 import java.util.List;
@@ -29,16 +30,23 @@ class RecentSearchServiceTest {
 	@Autowired
 	private StockService stockService;
 
+	/** 이벤트 발행 지점이라 실제 경로 테스트가 이것을 부른다 (이슈 309). */
+	@Autowired
+	private StockController stockController;
+
 	@Autowired
 	private UserRepository userRepository;
 
-	/** 발행자({@code StockService.search})가 읽기 전용 트랜잭션이다 — {@code RecentViewedServiceTest} 와 같은 이유로 실제 경로로 본다. */
+	/**
+	 * 실제 경로로 본다 — 이슈 309 이후 발행 지점은 {@link StockController} 다 ({@code RecentViewedServiceTest} 주석 참고).
+	 * 서비스를 직접 부르면 이벤트가 나가지 않는다.
+	 */
 	@Test
-	@DisplayName("검색하면 행이 생긴다 — 읽기 전용 트랜잭션에서 발행돼도 기록된다")
+	@DisplayName("검색하면 행이 생긴다 — 컨트롤러가 트랜잭션 밖에서 발행한 뒤 기록된다")
 	void recordsThroughSearch() {
 		Long userId = newUserId();
 
-		stockService.search(userId, "삼성", 10);
+		stockController.search(userId, "삼성", 10);
 
 		List<RecentSearchRes.Item> items = recentSearchService.list(userId).items();
 		assertThat(items).hasSize(1);

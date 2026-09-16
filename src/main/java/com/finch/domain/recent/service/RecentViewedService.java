@@ -12,7 +12,6 @@ import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -36,18 +35,25 @@ public class RecentViewedService {
 	/**
 	 * 종목 상세를 본 사건을 기록한다.
 	 * <p>
-	 * <b>{@code REQUIRES_NEW} 인 이유가 둘이다.</b> 첫째, 발행자({@code StockService.detail})의 트랜잭션이
-	 * {@code readOnly = true} 다. 스프링은 읽기 전용 트랜잭션의 JDBC 커넥션을 실제로 read-only 로 만들기 때문에, 그 안에서 INSERT 를
-	 * 하면 Postgres 가 "cannot execute INSERT in a read-only transaction" 으로 거절한다. 새 트랜잭션은 새 커넥션을 받아 그 제약이 없다.
-	 * 둘째, 조회가 실패해 롤백되더라도 "봤다"는 사실은 남는 편이 낫다 — 사용자는 이미 화면을 봤다.
+	 * <b>{@code REQUIRES_NEW} 였다가 걷어냈다</b> (이슈 309). 발행자가 {@code readOnly = true} 트랜잭션 안에서 발행하던 시절에는
+	 * 그것이 필요했다 — 스프링은 읽기 전용 트랜잭션의 JDBC 커넥션을 실제로 read-only 로 만들어서, 그 안에서 INSERT 를 하면
+	 * Postgres 가 "cannot execute INSERT in a read-only transaction" 으로 거절하기 때문이다.
 	 * <p>
-	 * {@code @TransactionalEventListener(AFTER_COMMIT)} 도 후보였지만 기각했다. 커밋 뒤에만 도는 리스너는 테스트가 트랜잭션으로
-	 * 감싸여 있으면 <b>아예 실행되지 않아</b>, 통합 테스트에서 "기록이 안 된다"가 조용히 통과한다.
+	 * 그런데 {@code REQUIRES_NEW} 는 바깥 트랜잭션을 <b>중단할 뿐 커넥션은 반납하지 않는다</b>. 동기 리스너라 같은 스레드에서
+	 * 도는 동안 <b>요청 하나가 커넥션 2개를 동시에 점유</b>했고, 풀 크기만큼의 요청이 겹치면 서로의 두 번째 커넥션을 기다리며
+	 * 데드락이 됐다. 실측에서 풀 4 · 동시 4건에 재현됐고 트래픽이 끊길 때까지 회복하지 못했다.
+	 * <p>
+	 * 지금은 {@link com.finch.domain.stock.controller.StockController} 가 트랜잭션 밖에서 발행하므로 이 리스너가 돌 때
+	 * 바깥 커넥션이 이미 반납돼 있다. 평범한 {@code @Transactional} 로 충분하고 커넥션도 1개만 쓴다.
+	 * <p>
+	 * {@code @TransactionalEventListener(AFTER_COMMIT)} 는 해법이 아니다. 커넥션은 {@code cleanupAfterCompletion} 에서 반납되는데
+	 * {@code AFTER_COMMIT} 콜백은 그보다 먼저 돌아 커넥션이 아직 잡혀 있다. 게다가 커밋 뒤에만 도는 리스너는 테스트가
+	 * 트랜잭션으로 감싸여 있으면 <b>아예 실행되지 않아</b>, 통합 테스트에서 "기록이 안 된다"가 조용히 통과한다.
 	 * <p>
 	 * UPSERT 뒤 곧바로 30건으로 자른다. 두 문장이 한 트랜잭션이라 중간 상태(31건)가 다른 요청에 보이지 않는다.
 	 */
 	@EventListener
-	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	@Transactional
 	public void on(StockViewedEvent event) {
 		recentViewedStockRepository.upsert(event.userId(), event.stockCode(), event.viewedAt());
 		recentViewedStockRepository.trimBeyond(event.userId(), MAX_ITEMS);
