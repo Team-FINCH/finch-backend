@@ -7,7 +7,6 @@ import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -28,9 +27,12 @@ public class RecentSearchService {
 
 	private final RecentSearchKeywordRepository recentSearchKeywordRepository;
 
-	/** {@code REQUIRES_NEW} 인 이유는 {@link RecentViewedService#on} 주석에 있다 (발행자가 읽기 전용 트랜잭션이다). */
+	/**
+	 * {@code REQUIRES_NEW} 를 걷어낸 이유는 {@link RecentViewedService#on} 주석에 있다 (이슈 309 — 발행이 트랜잭션 밖으로
+	 * 나가면서 요청당 커넥션 2개 점유가 사라졌다).
+	 */
 	@EventListener
-	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	@Transactional
 	public void on(StockSearchedEvent event) {
 		String keyword = event.keyword();
 		if (keyword.length() > MAX_KEYWORD_LENGTH) {
