@@ -1,7 +1,9 @@
 package com.finch.domain.stock.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
@@ -18,8 +20,11 @@ import com.finch.domain.stock.dto.response.StockDetailRes;
 import com.finch.domain.stock.dto.response.StockPriceRes;
 import com.finch.domain.stock.dto.response.StockSearchRes;
 import com.finch.domain.stock.entity.Market;
+import com.finch.domain.stock.event.StockSearchedEvent;
+import com.finch.domain.stock.event.StockViewedEvent;
 import com.finch.domain.stock.exception.StockErrorCode;
 import com.finch.domain.stock.service.StockService;
+import com.finch.global.apiPayload.code.GeneralErrorCode;
 import com.finch.global.config.SecurityConfig;
 import com.finch.global.exception.CustomException;
 import com.finch.global.security.JwtProvider;
@@ -35,6 +40,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -44,12 +51,16 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  */
 @WebMvcTest(StockController.class)
 @Import(SecurityConfig.class)
+@RecordApplicationEvents
 class StockControllerTest {
 
 	private static final String VALID_TOKEN = "valid-access-token";
 
 	@Autowired
 	private MockMvc mockMvc;
+
+	@Autowired
+	private ApplicationEvents events;
 
 	@MockitoBean
 	private StockService stockService;
@@ -314,6 +325,84 @@ class StockControllerTest {
 			mockMvc.perform(authed(get("/api/v1/stocks/999999/candles")))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.code").value("STOCK_NOT_FOUND"));
+		}
+	}
+
+	/**
+	 * "봤다"·"검색했다" 이벤트 발행 (이슈 309).
+	 * <p>
+	 * <b>이 단언들은 원래 {@code StockServiceTest} 에 있었다.</b> 발행 지점이 서비스 안이었기 때문인데, 그 위치가
+	 * {@code @Transactional(readOnly = true)} 안이라 동기 리스너가 {@code REQUIRES_NEW} 로 두 번째 커넥션을 잡아야 했고
+	 * 요청 하나가 커넥션 2개를 점유했다. 발행을 컨트롤러로 옮기면서 단언도 따라왔다.
+	 * <p>
+	 * 여기서 고정하는 것은 둘이다 — <b>성공한 요청만 발행한다</b>는 것과, <b>검색어는 걷어낸 값</b>이라는 것.
+	 * 리스너는 이 슬라이스 컨텍스트에 없으므로 DB 는 보지 않는다 (그쪽은 {@code RecentViewedServiceTest}).
+	 */
+	@Nested
+	@DisplayName("이벤트 발행")
+	class Events {
+
+		@Test
+		@DisplayName("상세가 성공하면 StockViewedEvent 가 한 번 발행된다")
+		void publishesViewedOnSuccess() throws Exception {
+			givenLoggedIn(42L);
+			given(stockService.detail(42L, "005930")).willReturn(detailRes());
+
+			mockMvc.perform(authed(get("/api/v1/stocks/005930"))).andExpect(status().isOk());
+
+			assertThat(events.stream(StockViewedEvent.class)).hasSize(1)
+				.first().satisfies(e -> {
+					assertThat(e.userId()).isEqualTo(42L);
+					assertThat(e.stockCode()).isEqualTo("005930");
+					assertThat(e.viewedAt()).isNotNull();
+				});
+		}
+
+		/** 서비스가 던지면 발행 줄에 닿지 않는다 — 실패한 조회는 "최근 본 종목" 에 남지 않는다. */
+		@Test
+		@DisplayName("상세가 404 면 이벤트가 없다")
+		void publishesNothingWhenDetailFails() throws Exception {
+			givenLoggedIn(42L);
+			given(stockService.detail(42L, "999999")).willThrow(new CustomException(StockErrorCode.STOCK_NOT_FOUND));
+
+			mockMvc.perform(authed(get("/api/v1/stocks/999999"))).andExpect(status().isNotFound());
+
+			assertThat(events.stream(StockViewedEvent.class)).isEmpty();
+		}
+
+		/** {@code @Size} 는 공백을 세므로 " 삼성 " 이 통과한다. 기록에 남는 것은 걷어낸 "삼성" 이어야 한다. */
+		@Test
+		@DisplayName("검색어는 앞뒤 공백을 걷어낸 값으로 발행된다")
+		void publishesStrippedKeyword() throws Exception {
+			givenLoggedIn(42L);
+			given(stockService.search(anyLong(), anyString(), anyInt())).willReturn(new StockSearchRes(List.of()));
+
+			mockMvc.perform(authed(get("/api/v1/stocks/search").param("keyword", " 삼성 ")))
+				.andExpect(status().isOk());
+
+			assertThat(events.stream(StockSearchedEvent.class)).hasSize(1)
+				.first().satisfies(e -> {
+					assertThat(e.userId()).isEqualTo(42L);
+					assertThat(e.keyword()).isEqualTo("삼성");
+				});
+		}
+
+		@Test
+		@DisplayName("검색이 실패하면 이벤트가 없다")
+		void publishesNothingWhenSearchFails() throws Exception {
+			givenLoggedIn(42L);
+			given(stockService.search(anyLong(), anyString(), anyInt()))
+				.willThrow(new CustomException(GeneralErrorCode.INVALID_REQUEST));
+
+			mockMvc.perform(authed(get("/api/v1/stocks/search").param("keyword", " 삼 ")))
+				.andExpect(status().isBadRequest());
+
+			assertThat(events.stream(StockSearchedEvent.class)).isEmpty();
+		}
+
+		private StockDetailRes detailRes() {
+			return new StockDetailRes("005930", "삼성전자", Market.KOSPI, null, 74_400L, null, null, false, null, false,
+				null, null);
 		}
 	}
 

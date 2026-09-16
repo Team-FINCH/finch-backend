@@ -14,8 +14,6 @@ import com.finch.domain.stock.dto.response.StockSearchRes;
 import com.finch.domain.stock.dto.response.TradabilityRes;
 import com.finch.domain.stock.entity.Market;
 import com.finch.domain.stock.entity.Stock;
-import com.finch.domain.stock.event.StockSearchedEvent;
-import com.finch.domain.stock.event.StockViewedEvent;
 import com.finch.domain.stock.exception.StockErrorCode;
 import com.finch.domain.stock.repository.DailyCandleRepository;
 import com.finch.domain.stock.repository.StockRepository;
@@ -34,8 +32,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.test.context.event.ApplicationEvents;
-import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -47,7 +43,6 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
-@RecordApplicationEvents
 class StockServiceTest {
 
 	private static final AtomicLong KAKAO_ID = new AtomicLong(980_000_000L);
@@ -73,9 +68,6 @@ class StockServiceTest {
 
 	@Autowired
 	private TransactionTemplate transactionTemplate;
-
-	@Autowired
-	private ApplicationEvents events;
 
 	@Autowired
 	private UserRepository userRepository;
@@ -115,7 +107,7 @@ class StockServiceTest {
 	class Search {
 
 		@Test
-		@DisplayName("이름 부분 일치 — 시세는 기본 포트라 null 이고 검색 이벤트가 발행된다")
+		@DisplayName("이름 부분 일치 — 시세는 기본 포트라 null 이다")
 		void searchesByNameFragment() {
 			StockSearchRes res = stockService.search(userId, "삼성", 10);
 
@@ -123,11 +115,6 @@ class StockServiceTest {
 			assertThat(res.items()).allMatch(i -> i.stockName().contains("삼성"));
 			assertThat(res.items()).extracting(StockSearchRes.Item::stockCode).contains("005930");
 			assertThat(res.items()).allMatch(i -> i.currentPrice() == null && i.changeAmount() == null && i.changeRate() == null);
-			assertThat(events.stream(StockSearchedEvent.class)).hasSize(1)
-				.first().satisfies(e -> {
-					assertThat(e.userId()).isEqualTo(userId);
-					assertThat(e.keyword()).isEqualTo("삼성");
-				});
 		}
 
 		@Test
@@ -169,7 +156,7 @@ class StockServiceTest {
 
 		/** 컨트롤러의 @Size 는 공백을 세므로 " 삼" 을 통과시킨다. 서비스가 걷어낸 뒤 다시 본다. */
 		@Test
-		@DisplayName("공백을 걷어낸 검색어가 2글자 미만이면 INVALID_REQUEST 이고 이벤트는 없다")
+		@DisplayName("공백을 걷어낸 검색어가 2글자 미만이면 INVALID_REQUEST")
 		void rejectsShortKeywordAfterTrim() {
 			assertThatThrownBy(() -> stockService.search(userId, " 삼 ", 10))
 				.isInstanceOf(CustomException.class)
@@ -178,7 +165,6 @@ class StockServiceTest {
 					assertThat(ce.getErrorCode()).isEqualTo(GeneralErrorCode.INVALID_REQUEST);
 					assertThat(ce.getDetail()).isEqualTo(Map.of("keyword", "2글자 이상 입력해 주세요"));
 				});
-			assertThat(events.stream(StockSearchedEvent.class)).isEmpty();
 		}
 
 		@Test
@@ -209,7 +195,7 @@ class StockServiceTest {
 	class Detail {
 
 		@Test
-		@DisplayName("시드 종목 — holding null · watched false · 시세 null · asOf null, 조회 이벤트가 발행된다")
+		@DisplayName("시드 종목 — holding null · watched false · 시세 null · asOf null")
 		void returnsDetailWithEmptyPorts() {
 			StockDetailRes res = stockService.detail(userId, "005930");
 
@@ -225,22 +211,15 @@ class StockServiceTest {
 			assertThat(res.suspendedReason()).isNull();
 			assertThat(res.watched()).isFalse();
 			assertThat(res.holding()).isNull();
-			assertThat(events.stream(StockViewedEvent.class)).hasSize(1)
-				.first().satisfies(e -> {
-					assertThat(e.userId()).isEqualTo(userId);
-					assertThat(e.stockCode()).isEqualTo("005930");
-					assertThat(e.viewedAt()).isNotNull();
-				});
 		}
 
 		@Test
-		@DisplayName("없는 코드는 STOCK_NOT_FOUND 이고 이벤트는 없다")
+		@DisplayName("없는 코드는 STOCK_NOT_FOUND")
 		void notFound() {
 			assertThatThrownBy(() -> stockService.detail(userId, "999999"))
 				.isInstanceOf(CustomException.class)
 				.extracting(e -> ((CustomException) e).getErrorCode())
 				.isEqualTo(StockErrorCode.STOCK_NOT_FOUND);
-			assertThat(events.stream(StockViewedEvent.class)).isEmpty();
 		}
 
 		@Test

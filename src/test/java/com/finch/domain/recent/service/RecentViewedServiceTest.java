@@ -9,6 +9,7 @@ import com.finch.domain.recent.dto.response.RecentViewedRes;
 import com.finch.domain.recent.repository.RecentViewedStockRepository;
 import com.finch.domain.stock.entity.Stock;
 import com.finch.domain.stock.event.StockViewedEvent;
+import com.finch.domain.stock.controller.StockController;
 import com.finch.domain.stock.repository.StockRepository;
 import com.finch.domain.stock.service.StockService;
 import java.time.Instant;
@@ -48,6 +49,10 @@ class RecentViewedServiceTest {
 	@Autowired
 	private StockService stockService;
 
+	/** 이벤트 발행 지점이라 실제 경로 테스트가 이것을 부른다 (이슈 309). */
+	@Autowired
+	private StockController stockController;
+
 	@Autowired
 	private StockRepository stockRepository;
 
@@ -59,16 +64,19 @@ class RecentViewedServiceTest {
 	class Recording {
 
 		/**
-		 * <b>이 테스트가 이 스토리에서 제일 중요하다.</b> 발행자({@code StockService.detail})가 {@code readOnly = true} 라
-		 * 스프링이 그 커넥션을 read-only 로 만든다. 리스너가 같은 트랜잭션에서 돌면 Postgres 가 INSERT 를 거절한다.
-		 * {@code REQUIRES_NEW} 가 그것을 피하는지를 <b>실제 경로로</b> 확인한다 — 리스너를 직접 부르면 이 문제가 드러나지 않는다.
+		 * <b>이 테스트가 이 스토리에서 제일 중요하다.</b> 리스너를 직접 부르지 않고 <b>실제 경로로</b> 확인한다.
+		 * <p>
+		 * 그 경로가 이슈 309 에서 바뀌었다. 예전에는 {@code StockService.detail} 이 {@code readOnly = true} 트랜잭션
+		 * 안에서 발행했고, 리스너는 Postgres 의 INSERT 거절을 피하려고 {@code REQUIRES_NEW} 를 써야 했다. 그 결과
+		 * 요청 하나가 커넥션 2개를 점유해 풀 데드락이 났다. 지금은 {@link StockController} 가 트랜잭션 밖에서 발행하므로
+		 * <b>컨트롤러를 부르는 것이 곧 실제 경로다</b> — 서비스를 직접 부르면 이벤트가 아예 나가지 않는다.
 		 */
 		@Test
-		@DisplayName("종목 상세를 보면 행이 생긴다 — 읽기 전용 트랜잭션에서 발행돼도 기록된다")
+		@DisplayName("종목 상세를 보면 행이 생긴다 — 컨트롤러가 트랜잭션 밖에서 발행한 뒤 기록된다")
 		void recordsThroughStockDetail() {
 			Long userId = newUserId();
 
-			stockService.detail(userId, "005930");
+			stockController.detail(userId, "005930");
 
 			List<RecentViewedRes.Item> items = recentViewedService.list(userId).items();
 			assertThat(items).hasSize(1);
