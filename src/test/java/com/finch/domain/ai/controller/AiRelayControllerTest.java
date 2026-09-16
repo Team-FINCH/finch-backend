@@ -45,7 +45,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * 중계 컨트롤러의 경로 13종이 JWT 로 보호되고 서비스에 올바른 라우트·경로 변수·본문을 넘기는지, 그리고 서비스가 던진 예외가
+ * 중계 컨트롤러의 경로 15종이 JWT 로 보호되고 서비스에 올바른 라우트·경로 변수·본문을 넘기는지, 그리고 서비스가 던진 예외가
  * 계약대로 나가는지(상태·code·requestId·Retry-After). 재포장·에러 규칙 자체는 {@code AiRelayServiceTest} 가 본다.
  */
 @WebMvcTest(AiRelayController.class)
@@ -108,8 +108,45 @@ class AiRelayControllerTest {
 		org.assertj.core.api.Assertions.assertThat(body.getValue().get("personalize").asBoolean()).isTrue();
 	}
 
+	/**
+	 * v0.8.19 (이슈 #84·#90). 프론트의 {@code Idempotency-Key} 가 서비스로 넘어가야 AI 쪽 2차 방어가 산다.
+	 * 실제로 헤더를 AI 요청에 싣는 것은 {@code AiRelayServiceTest} 가 본다 — 여기서는 컨트롤러가 그 값을 흘리지 않는지만 본다.
+	 */
 	@Test
-	@DisplayName("나머지 11종의 경로·메서드가 라우트에 맞게 서비스로 간다")
+	@DisplayName("POST /ai/chat/jobs — Idempotency-Key 를 서비스로 넘기고 AI 의 202 를 그대로 내려보낸다")
+	void createChatJob() throws Exception {
+		givenLoggedIn(42L);
+		given(relayService.relay(eq(AiRoute.CHAT_JOB_CREATE), isNull(), isNull(), eq(42L), any(), anyString()))
+			.willReturn(ResponseEntity.accepted().body(mapper.readTree(
+				"{\"content\":{\"jobId\":\"job_1\",\"status\":\"queued\",\"conversationId\":\"conv_1\"}}")));
+
+		mockMvc.perform(authed(post("/api/v1/ai/chat/jobs"))
+				.header("Idempotency-Key", "key-1")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"question\":\"삼성전자?\"}"))
+			.andExpect(status().isAccepted())
+			.andExpect(jsonPath("$.content.jobId").value("job_1"))
+			.andExpect(jsonPath("$.content.status").value("queued"));
+
+		verify(relayService).relay(eq(AiRoute.CHAT_JOB_CREATE), isNull(), isNull(), eq(42L), any(), eq("key-1"));
+	}
+
+	/** 필터가 설정에서 빠지면 헤더 없이 닿는다. 그때 컨트롤러가 400 을 내지 않고 null 로 넘기는지 — 400 은 필터 몫이다. */
+	@Test
+	@DisplayName("POST /ai/chat/jobs — 헤더가 없으면 키 없이 넘긴다")
+	void createChatJobWithoutKey() throws Exception {
+		givenLoggedIn(42L);
+		given(relayService.relay(eq(AiRoute.CHAT_JOB_CREATE), isNull(), isNull(), eq(42L), any(), isNull()))
+			.willReturn(ResponseEntity.accepted().body(mapper.readTree("{\"content\":{\"jobId\":\"job_2\"}}")));
+
+		mockMvc.perform(authed(post("/api/v1/ai/chat/jobs"))
+				.contentType(MediaType.APPLICATION_JSON).content("{}"))
+			.andExpect(status().isAccepted());
+
+		verify(relayService).relay(eq(AiRoute.CHAT_JOB_CREATE), isNull(), isNull(), eq(42L), any(), isNull());
+	}
+
+	@Test
+	@DisplayName("나머지 12종의 경로·메서드가 라우트에 맞게 서비스로 간다")
 	void otherRoutes() throws Exception {
 		givenLoggedIn(42L);
 		given(relayService.relay(any(), any(), any(), eq(42L), any()))
@@ -133,6 +170,7 @@ class AiRelayControllerTest {
 		mockMvc.perform(authed(delete("/api/v1/ai/wiki/facts/f1"))).andExpect(status().isOk());
 		mockMvc.perform(authed(get("/api/v1/ai/chat/conversations/conv_01/messages"))).andExpect(status().isOk());
 		mockMvc.perform(authed(post("/api/v1/ai/wiki/facts/f2/confirm"))).andExpect(status().isOk());
+		mockMvc.perform(authed(get("/api/v1/ai/chat/jobs/job_1"))).andExpect(status().isOk());
 
 		verify(relayService).relay(eq(AiRoute.CHAT), isNull(), isNull(), eq(42L), any());
 		verify(relayService).relay(eq(AiRoute.PORTFOLIO_DIAGNOSIS), isNull(), isNull(), eq(42L), isNull());
@@ -148,6 +186,7 @@ class AiRelayControllerTest {
 		verify(relayService).relay(eq(AiRoute.CHAT_CONVERSATION_MESSAGES), eq(Map.of("conversationId", "conv_01")), isNull(),
 			eq(42L), isNull());
 		verify(relayService).relay(eq(AiRoute.WIKI_FACT_CONFIRM), eq(Map.of("factId", "f2")), isNull(), eq(42L), isNull());
+		verify(relayService).relay(eq(AiRoute.CHAT_JOB_STATUS), eq(Map.of("jobId", "job_1")), isNull(), eq(42L), isNull());
 	}
 
 	/** apiSpec 10.1 (v0.8.8, 이슈 #56) — 매수 이유를 처음 적는 경로. 경로 변수가 없고 종목은 본문의 ticker 다. */

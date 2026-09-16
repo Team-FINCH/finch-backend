@@ -3,6 +3,7 @@ package com.finch.domain.ai.relay;
 import com.finch.domain.ai.service.WikiThesisService;
 import com.finch.domain.stock.exception.StockErrorCode;
 import com.finch.global.exception.CustomException;
+import com.finch.global.idempotency.IdempotencyFilter;
 import com.finch.global.security.LoginUser;
 import com.finch.global.util.StockUniverse;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -16,13 +17,14 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.JsonNode;
 
 /**
- * AI 중계 API 13종 (apiSpec 10.1). 한 컨트롤러에 모아 두는 이유 — 전부 같은 일({@link AiRelayService#relay})을 하고 다른 것은
+ * AI 중계 API 15종 (apiSpec 10.1). 한 컨트롤러에 모아 두는 이유 — 전부 같은 일({@link AiRelayService#relay})을 하고 다른 것은
  * 경로와 메서드뿐이다. {@link AiRoute} 가 AI 쪽 경로를, 여기 어노테이션이 우리 쪽 경로를 든다.
  * <p>
  * 본문은 {@link JsonNode} 로 받는다 — 엔드포인트별 DTO 를 두지 않는다 (apiSpec 10.3 "제네릭 변환"). 검증도 하지 않는다: 요청 형식
@@ -59,6 +61,36 @@ public class AiRelayController {
 	@PostMapping("/chat")
 	public ResponseEntity<JsonNode> chat(@LoginUser long userId, @RequestBody(required = false) JsonNode body) {
 		return relayService.relay(AiRoute.CHAT, null, null, userId, body);
+	}
+
+	/**
+	 * 채팅 작업 생성 (apiSpec 10.1, v0.8.19, 이슈 #84·#90). AI 가 <b>202 와 {@code jobId} 로 곧장</b> 답하고 생성은 뒤에서 이어진다.
+	 * 202 를 위해 여기서 할 일은 없다 — {@code relay} 가 AI 의 2xx 를 그대로 내려보낸다.
+	 * <p>
+	 * <b>{@code Idempotency-Key} 를 받는 유일한 중계 경로다.</b> 이 경로는 {@code finch.idempotency.paths} 에 올라 있어 헤더가
+	 * 없으면 {@code IdempotencyFilter} 가 400 으로 막으므로, 여기까지 온 요청에는 사실상 값이 있다. 그런데도
+	 * {@code required = false} 인 것은 필터가 도는 자리와 이 어노테이션이 보는 자리가 다르기 때문이다 — 필터 설정에서
+	 * 경로가 빠지면 이 자리는 조용히 {@code null} 을 받아야 하고, 400 을 두 곳에서 내면 원인을 찾기 어려워진다.
+	 */
+	@PostMapping("/chat/jobs")
+	public ResponseEntity<JsonNode> createChatJob(@LoginUser long userId,
+		@RequestHeader(value = IdempotencyFilter.HEADER, required = false) String idempotencyKey,
+		@RequestBody(required = false) JsonNode body) {
+		return relayService.relay(AiRoute.CHAT_JOB_CREATE, null, null, userId, body, idempotencyKey);
+	}
+
+	/**
+	 * 채팅 작업 상태·결과 (apiSpec 10.1, v0.8.19). 프론트가 2초 간격으로 부른다 — AI 쪽 호출 한도에 걸리지 않는 경로다
+	 * (이슈 #90 ㄴ).
+	 * <p>
+	 * 실패한 작업도 <b>200</b> 이다. 본문의 {@code content.error} 에 {@code code}·{@code message}·{@code retryable} 이 담겨
+	 * 그대로 재포장된다 — 여기서 상태 코드로 바꾸면 {@code AiUpstreamErrors} 가 붙잡아 그 셋을 벗겨 버린다.
+	 * 없는 작업·지난 작업·남의 작업은 셋 다 AI 의 {@code 404 RESOURCE_NOT_FOUND} 한 갈래라 소유권을 여기서 보지 않는다
+	 * (대화 이력·위키 확정과 같은 규칙).
+	 */
+	@GetMapping("/chat/jobs/{jobId}")
+	public ResponseEntity<JsonNode> chatJob(@LoginUser long userId, @PathVariable String jobId) {
+		return relayService.relay(AiRoute.CHAT_JOB_STATUS, Map.of("jobId", jobId), null, userId, null);
 	}
 
 	/**

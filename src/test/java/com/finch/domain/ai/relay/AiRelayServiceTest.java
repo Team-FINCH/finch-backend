@@ -165,6 +165,58 @@ class AiRelayServiceTest {
 				.doesNotContain("thesisText");
 		}
 
+		/**
+		 * v0.8.19 (이슈 #90 ㄱ). 우리가 프론트에서 받는 헤더 이름은 {@code Idempotency-Key} 지만 AI 로는
+		 * {@code X-Idempotency-Key} 로 나간다 — 두 이름이 뒤바뀌면 AI 는 키 없는 요청으로 보고 매번 새 작업을 만든다.
+		 */
+		@Test
+		@DisplayName("POST /chat/jobs — 멱등성 키를 X-Idempotency-Key 로 싣는다")
+		void sendsIdempotencyKey() throws IOException {
+			AiRelayService service = service(req -> json(HttpStatus.ACCEPTED, "{\"content\":{\"job_id\":\"job_1\"}}"));
+
+			service.relay(AiRoute.CHAT_JOB_CREATE, null, null, 42L, mapper.readTree("{\"question\":\"삼성전자?\"}"),
+				"11111111-2222-3333-4444-555555555555");
+
+			ClientRequest req = sent.getFirst();
+			assertThat(req.url()).isEqualTo(URI.create("https://ai.test/api/ai/v1/chat/jobs"));
+			assertThat(req.headers().getFirst(AiRelayService.IDEMPOTENCY_HEADER))
+				.isEqualTo("11111111-2222-3333-4444-555555555555");
+			assertThat(req.headers().getFirst("X-User-Id")).isEqualTo("42");
+		}
+
+		/**
+		 * 키가 없으면 <b>헤더 자리를 비워 둔다.</b> 빈 문자열을 실어 보내면 AI 가 "키 있음" 으로 읽어 서로 다른 질문이
+		 * 한 작업으로 합쳐질 수 있다 (AI api-spec §4.2 — 헤더가 없으면 매번 새 작업).
+		 */
+		@Test
+		@DisplayName("멱등성 키가 null 이거나 비어 있으면 헤더를 싣지 않는다")
+		void omitsBlankIdempotencyKey() throws IOException {
+			AiRelayService service = service(req -> json(HttpStatus.ACCEPTED, "{\"content\":{}}"));
+
+			service.relay(AiRoute.CHAT_JOB_CREATE, null, null, 42L, mapper.readTree("{}"), null);
+			service.relay(AiRoute.CHAT_JOB_CREATE, null, null, 42L, mapper.readTree("{}"), "   ");
+
+			assertThat(sent).hasSize(2)
+				.allSatisfy(req -> assertThat(req.headers().getFirst(AiRelayService.IDEMPOTENCY_HEADER)).isNull());
+		}
+
+		/** 202 는 2xx 라 에러가 아니다 — 상태 코드를 그대로 내려보내고 봉투만 재포장한다. */
+		@Test
+		@DisplayName("GET /chat/jobs/{jobId} — 경로 변수를 채우고 202·200 을 그대로 돌려준다")
+		void chatJobStatus() {
+			AiRelayService service = service(req -> json(HttpStatus.OK,
+				"{\"content\":{\"job_id\":\"job_1\",\"status\":\"completed\",\"completed_at\":\"2026-09-16T14:30:42+09:00\"}}"));
+
+			ResponseEntity<JsonNode> res = service.relay(AiRoute.CHAT_JOB_STATUS, Map.of("jobId", "job_1"), null, 42L, null);
+
+			assertThat(sent.getFirst().url()).isEqualTo(URI.create("https://ai.test/api/ai/v1/chat/jobs/job_1"));
+			assertThat(sent.getFirst().method()).isEqualTo(HttpMethod.GET);
+			assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+			assertThat(res.getBody().get("content").get("jobId").asString()).isEqualTo("job_1");
+			assertThat(res.getBody().get("content").get("completedAt").asString())
+				.isEqualTo("2026-09-16T14:30:42+09:00");
+		}
+
 		/** v0.8.8 에서 들어온 경로. 경로 변수가 없는 POST 도 같은 변환(camel → snake)을 탄다. */
 		@Test
 		@DisplayName("POST /wiki/theses — 경로 변수 없이 AI 의 /wiki/theses 로 가고 linkedTradeId 가 linked_trade_id 가 된다")
@@ -318,6 +370,22 @@ class AiRelayServiceTest {
 				.extracting(e -> ((CustomException) e).getErrorCode())
 				.isEqualTo(AiErrorCode.AI_UPSTREAM_TIMEOUT);
 		}
+
+		/**
+		 * 경로마다 다른 제한을 쓴다 (이슈 #90). 긴 쪽을 아주 길게, 짧은 쪽을 아주 짧게 두고 <b>짧은 경로만</b>
+		 * 끊기는 것으로 확인한다 — 두 값이 뒤바뀌면 이 테스트에서 채팅 작업 조회가 살아남고 동기 채팅이 끊긴다.
+		 */
+		@Test
+		@DisplayName("채팅 작업 경로는 quick-timeout 을, 나머지는 timeout 을 쓴다")
+		void quickRoutesUseTheirOwnTimeout() {
+			AiRelayService service = new AiRelayService(WebClient.builder().exchangeFunction(req -> Mono.never()),
+				new AiProperties("https://ai.test", "ai-token", Duration.ofSeconds(30), Duration.ofMillis(200)));
+
+			assertThatThrownBy(() -> service.relay(AiRoute.CHAT_JOB_STATUS, Map.of("jobId", "job_1"), null, 42L, null))
+				.isInstanceOf(CustomException.class)
+				.extracting(e -> ((CustomException) e).getErrorCode())
+				.isEqualTo(AiErrorCode.AI_UPSTREAM_TIMEOUT);
+		}
 	}
 
 	// ---- helpers ----
@@ -352,8 +420,9 @@ class AiRelayServiceTest {
 		return new AiRelayService(builder, properties(Duration.ofSeconds(5)));
 	}
 
+	/** quick 쪽도 같은 값으로 둔다 — 두 제한을 가르는 것은 {@code quickRoutesUseTheirOwnTimeout} 하나가 본다. */
 	private static AiProperties properties(Duration timeout) {
-		return new AiProperties("https://ai.test", "ai-token", timeout);
+		return new AiProperties("https://ai.test", "ai-token", timeout, timeout);
 	}
 
 	private static ClientResponse json(HttpStatus status, String body) {
