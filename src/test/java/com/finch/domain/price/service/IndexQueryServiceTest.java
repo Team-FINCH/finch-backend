@@ -8,8 +8,11 @@ import com.finch.domain.price.PriceProperties;
 import com.finch.domain.price.cache.IndexCache;
 import com.finch.domain.price.cache.IndexEntry;
 import com.finch.domain.price.service.IndexQueryService.IndexSnapshot;
+import com.finch.global.config.FinchProperties;
+import com.finch.global.util.MarketClock;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -32,6 +35,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 class IndexQueryServiceTest {
 
 	private static final Instant NOW = Instant.parse("2026-09-11T05:30:00Z");
+	/** 토요일 14:30 KST — 휴장. 장 밖 판정을 보는 테스트가 쓴다 (이슈 #76). */
+	private static final Instant CLOSED_NOW = Instant.parse("2026-09-12T05:30:00Z");
 
 	@Autowired
 	private IndexCache indexCache;
@@ -96,7 +101,40 @@ class IndexQueryServiceTest {
 		assertThat(snapshots.get(1).stale()).isFalse();
 	}
 
+	/**
+	 * 이슈 #76 — 지수 공급자가 장 밖에 쉬게 되면서 마지막 수신이 계속 낡아진다. 그것을 "수신 끊김" 으로 읽으면 장 마감 60초
+	 * 뒤부터 다음 개장까지 홈 지수에 "지연" 이 붙는다. 체결이 없어 값이 안 바뀌는 것이지 끊긴 것이 아니다 —
+	 * {@code PriceQueryService} 가 종목 시세에 대해 같은 구분을 한다.
+	 */
+	@Test
+	@DisplayName("장 밖 — 마지막 수신이 아무리 오래됐어도 stale 은 false 다")
+	void outsideMarketHoursNeverStale() {
+		Instant veryOld = CLOSED_NOW.minus(properties.index().staleAfter()).minusSeconds(86_400);
+		indexCache.put(MarketIndex.KOSPI, new IndexEntry(new BigDecimal("2600.54"), new BigDecimal("2612.85"), veryOld));
+
+		IndexSnapshot kospi = serviceAt(CLOSED_NOW).latestAll().getFirst();
+
+		assertThat(kospi.stale()).isFalse();
+		assertThat(kospi.currentValue()).isEqualByComparingTo("2600.54");
+		assertThat(kospi.asOf()).isEqualTo(veryOld);
+	}
+
+	/** 값 없음은 장 밖에서도 stale 이다 — 한 번도 안 채워진 것과 안 바뀌는 것은 다르다. */
+	@Test
+	@DisplayName("장 밖이어도 값 없음은 stale 이다")
+	void outsideMarketHoursMissingStillStale() {
+		List<IndexSnapshot> snapshots = serviceAt(CLOSED_NOW).latestAll();
+
+		assertThat(snapshots.getFirst()).isEqualTo(IndexSnapshot.missing(MarketIndex.KOSPI));
+		assertThat(snapshots.getFirst().stale()).isTrue();
+	}
+
 	private IndexQueryService serviceAt(Instant now) {
-		return new IndexQueryService(indexCache, properties, Clock.fixed(now, ZoneOffset.UTC));
+		Clock clock = Clock.fixed(now, ZoneOffset.UTC);
+		FinchProperties finch = new FinchProperties(new FinchProperties.Market(false),
+			new FinchProperties.Http(Duration.ofSeconds(3), Duration.ofSeconds(2), Duration.ofSeconds(30)),
+			new FinchProperties.LeaderLock(Duration.ofSeconds(10), Duration.ofSeconds(3)),
+			new FinchProperties.Internal("test-only-internal-token"));
+		return new IndexQueryService(indexCache, properties, new MarketClock(finch, clock), clock);
 	}
 }

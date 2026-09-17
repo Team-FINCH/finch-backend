@@ -14,10 +14,14 @@ import com.finch.domain.price.MarketIndex;
 import com.finch.domain.price.PriceProperties;
 import com.finch.domain.price.cache.IndexCache;
 import com.finch.domain.price.cache.IndexEntry;
+import com.finch.global.config.FinchProperties;
 import com.finch.global.lock.LeaderLock;
+import com.finch.global.util.MarketClock;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -38,6 +42,13 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 class KisIndexFeedTest {
 
 	private static final KisCredential A = new KisCredential("ka", "sa", "a");
+
+	/** 금요일 14:30 KST — 정규장. 시각을 대지 않는 테스트는 전부 이 시각이다. */
+	private static final Instant OPEN_AT = Instant.parse("2026-09-11T05:30:00Z");
+	/** 금요일 17:30 KST — 애프터마켓(16:00~20:00). */
+	private static final Instant AFTER_AT = Instant.parse("2026-09-11T08:30:00Z");
+	/** 토요일 14:30 KST — 휴장. 시간대가 아니라 요일로 닫히는 쪽을 고른다. */
+	private static final Instant CLOSED_AT = Instant.parse("2026-09-12T05:30:00Z");
 
 	@Autowired
 	private IndexCache indexCache;
@@ -112,11 +123,50 @@ class KisIndexFeedTest {
 		assertThat(indexCache.getAll()).isEmpty();
 	}
 
+	/**
+	 * 이슈 #76 — 관심 신호를 보지 않는 피드라 장 시간이 유일한 제동이다. 장 밖에 도는 것을 막는 것이 이 이슈의 요청이었고,
+	 * 화면을 전부 닫아도 10초마다 2회가 나가던 것이 이 호출이다.
+	 */
+	@Test
+	@DisplayName("장 밖이면 KIS 를 부르지 않는다 — 리더여도 틱이 0 이고 캐시를 건드리지 않는다")
+	void skipsOutsideMarketHours() {
+		KisClient client = mock(KisClient.class);
+
+		assertThat(feed(client, true, CLOSED_AT).tick()).isZero();
+
+		verifyNoInteractions(client);
+		assertThat(indexCache.getAll()).isEmpty();
+	}
+
+	/** 애프터마켓(16:00~20:00)까지는 채운다 — {@code isOpen()} 기준이다. 좁히려면 피드와 조회의 조건을 함께 좁혀야 한다. */
+	@Test
+	@DisplayName("애프터마켓에는 계속 채운다")
+	void fillsDuringAfterMarket() {
+		KisClient client = mock(KisClient.class);
+		given(client.indexPrice(any(), any()))
+			.willReturn(new KisIndexQuote(new BigDecimal("2600.54"), new BigDecimal("2612.85")));
+
+		assertThat(feed(client, true, AFTER_AT).tick()).isEqualTo(2);
+	}
+
 	private KisIndexFeed feed(KisClient client, boolean leader) {
+		return feed(client, leader, OPEN_AT);
+	}
+
+	private KisIndexFeed feed(KisClient client, boolean leader, Instant at) {
 		LeaderLock lock = mock(LeaderLock.class);
 		given(lock.isLeader()).willReturn(leader);
 		KisProperties kisProps = new KisProperties("https://kis.test", List.of(A), Duration.ofSeconds(3), 20,
 			Duration.ofSeconds(5), Duration.ofMinutes(5), false);
-		return new KisIndexFeed(client, new KisKeyPool(List.of(A)), indexCache, lock, priceProperties, kisProps);
+		return new KisIndexFeed(client, new KisKeyPool(List.of(A)), indexCache, lock, marketClockAt(at),
+			priceProperties, kisProps);
+	}
+
+	private static MarketClock marketClockAt(Instant instant) {
+		FinchProperties finch = new FinchProperties(new FinchProperties.Market(false),
+			new FinchProperties.Http(Duration.ofSeconds(3), Duration.ofSeconds(2), Duration.ofSeconds(30)),
+			new FinchProperties.LeaderLock(Duration.ofSeconds(10), Duration.ofSeconds(3)),
+			new FinchProperties.Internal("test-only-internal-token"));
+		return new MarketClock(finch, Clock.fixed(instant, ZoneOffset.UTC));
 	}
 }

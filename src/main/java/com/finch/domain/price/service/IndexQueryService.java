@@ -5,6 +5,7 @@ import com.finch.domain.price.PriceMath;
 import com.finch.domain.price.PriceProperties;
 import com.finch.domain.price.cache.IndexCache;
 import com.finch.domain.price.cache.IndexEntry;
+import com.finch.global.util.MarketClock;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -19,23 +20,30 @@ import org.springframework.stereotype.Service;
  * <p>
  * 다른 점이 둘이다. <b>관심 신호를 남기지 않는다</b> — 지수는 공급자가 상시로 채운다. <b>판정 시간이 다르다</b> — 수집 주기가 10초라
  * 종목 시세의 {@code stale-after}(10초)를 쓰면 지수가 상시 "지연" 이 된다. {@code index.stale-after}(60초)를 쓴다.
+ * <p>
+ * <b>장 밖에는 {@code stale} 을 판정하지 않는다</b> ({@link PriceQueryService} 와 같은 규칙, 이슈 #76). 지수 공급자가 장 밖에
+ * 쉬게 되면서({@code KisIndexFeed#tick}) 마지막 수신이 계속 낡아지는데, 그것은 수신이 끊긴 것이 아니라 <b>체결이 없어 값이
+ * 바뀌지 않는 것</b>이다. 이 조건이 없으면 장 마감 60초 뒤부터 다음 개장까지 홈 지수에 "지연" 이 붙는다. 조건은 공급자가 쉬는
+ * 조건과 <b>같아야</b> 한다 — 한쪽만 좁히면 그 구간이 그대로 "지연" 이 된다.
  */
 @Service
 public class IndexQueryService {
 
 	private final IndexCache indexCache;
 	private final PriceProperties properties;
+	private final MarketClock marketClock;
 	private final Clock clock;
 
 	@Autowired
-	public IndexQueryService(IndexCache indexCache, PriceProperties properties) {
-		this(indexCache, properties, Clock.systemUTC());
+	public IndexQueryService(IndexCache indexCache, PriceProperties properties, MarketClock marketClock) {
+		this(indexCache, properties, marketClock, Clock.systemUTC());
 	}
 
 	/** 시각을 고정해 {@code stale} 경계를 확인하려는 테스트가 쓴다 ({@link PriceQueryService} 와 같은 이유). */
-	public IndexQueryService(IndexCache indexCache, PriceProperties properties, Clock clock) {
+	public IndexQueryService(IndexCache indexCache, PriceProperties properties, MarketClock marketClock, Clock clock) {
 		this.indexCache = indexCache;
 		this.properties = properties;
+		this.marketClock = marketClock;
 		this.clock = clock;
 	}
 
@@ -51,12 +59,17 @@ public class IndexQueryService {
 			.toList();
 	}
 
-	/** apiSpec 5.4 의 세 상태를 지수에 대해 만든다. 값 없음 · 수신 끊김(마지막 값 유지) · 정상. */
+	/**
+	 * apiSpec 5.4 의 세 상태를 지수에 대해 만든다. 값 없음 · 수신 끊김(마지막 값 유지) · 정상.
+	 * <p>
+	 * <b>값 없음은 장 밖에서도 {@code stale=true} 다</b> — 아직 한 번도 채워지지 않았다는 뜻이라 "값이 안 바뀌는 중" 과 다르다.
+	 * {@link PriceQueryService} 가 같은 구분을 한다.
+	 */
 	private IndexSnapshot toSnapshot(MarketIndex index, IndexEntry entry, Instant now) {
 		if (entry == null) {
 			return IndexSnapshot.missing(index);
 		}
-		boolean stale = now.isAfter(entry.asOf().plus(properties.index().staleAfter()));
+		boolean stale = marketClock.isOpen() && now.isAfter(entry.asOf().plus(properties.index().staleAfter()));
 		return new IndexSnapshot(index, entry.currentValue(),
 			PriceMath.indexChange(entry.currentValue(), entry.previousClose()),
 			PriceMath.indexChangeRate(entry.currentValue(), entry.previousClose()),
