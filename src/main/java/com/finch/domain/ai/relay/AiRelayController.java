@@ -151,9 +151,19 @@ public class AiRelayController {
 		return wikiThesisService.update(userId, stockCode, body);
 	}
 
+	/**
+	 * 위키 사실 삭제 (apiSpec 10.1). 쿼리({@code reason})는 {@code briefing}·{@code wiki} 와 같이 그대로 넘긴다 — 우리가
+	 * 해석할 것이 없다. AI 가 삭제 사유를 {@code user_deleted}(기본값)와 {@code guess_rejected}(추측에 "아니에요")로 갈라
+	 * 적고, 그 분포가 추측 품질을 보는 데 쓰인다 (이슈 #53, #41).
+	 * <p>
+	 * <b>기본값을 여기서 채우지 않는다.</b> 쿼리가 비면 비운 채로 보내고 AI 쪽 시그니처의 기본값이 선다 — 기본값이 두 곳에
+	 * 있으면 한쪽만 바뀌었을 때 어긋난다. 열거값 밖의 값도 보지 않는다: AI 의 {@code 400 INVALID_REQUEST} 가 그대로
+	 * 통과된다 (10.4, 이 컨트롤러의 "검증도 하지 않는다" 와 같은 규칙).
+	 */
 	@DeleteMapping("/wiki/facts/{factId}")
-	public ResponseEntity<JsonNode> deleteFact(@LoginUser long userId, @PathVariable String factId) {
-		return relayService.relay(AiRoute.WIKI_FACT_DELETE, Map.of("factId", factId), null, userId, null);
+	public ResponseEntity<JsonNode> deleteFact(@LoginUser long userId, @PathVariable String factId,
+		@RequestParam MultiValueMap<String, String> query) {
+		return relayService.relay(AiRoute.WIKI_FACT_DELETE, Map.of("factId", factId), query, userId, null);
 	}
 
 	/**

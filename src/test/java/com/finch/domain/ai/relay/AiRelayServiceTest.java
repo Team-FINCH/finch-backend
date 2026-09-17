@@ -128,6 +128,25 @@ class AiRelayServiceTest {
 			assertThat(content.get("messages").get(0).get("createdAt").asString()).isEqualTo("2026-09-15T14:00:00+09:00");
 		}
 
+		/** 이슈 #53 — 쿼리를 붙이는 자리가 메서드를 가리지 않는다. GET(briefing)뿐 아니라 DELETE 도 실려 나가는지 본다. */
+		@Test
+		@DisplayName("위키 사실 삭제 — reason 쿼리가 업스트림 URL 에 그대로 실린다")
+		void deleteFactCarriesReasonQuery() {
+			AiRelayService service = service(req -> json(HttpStatus.OK,
+				"{\"content\":{\"id\":\"f1\",\"reason\":\"guess_rejected\"}}"));
+			LinkedMultiValueMap<String, String> query = new LinkedMultiValueMap<>();
+			query.add("reason", "guess_rejected");
+
+			JsonNode body = service.relay(AiRoute.WIKI_FACT_DELETE, Map.of("factId", "f1"), query, 42L, null).getBody();
+
+			ClientRequest req = sent.getFirst();
+			assertThat(req.method()).isEqualTo(HttpMethod.DELETE);
+			assertThat(req.url().toString())
+				.isEqualTo("https://ai.test/api/ai/v1/wiki/facts/f1?reason=guess_rejected");
+			assertThat(req.headers().getContentType()).isNull();
+			assertThat(body.get("content").get("reason").asString()).isEqualTo("guess_rejected");
+		}
+
 		@Test
 		@DisplayName("위키 확정 — 본문 없이 POST /wiki/facts/{factId}/confirm 으로 간다")
 		void confirmFactGoesToConfirmPath() {
