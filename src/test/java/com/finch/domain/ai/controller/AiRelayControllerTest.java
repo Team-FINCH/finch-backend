@@ -182,11 +182,37 @@ class AiRelayControllerTest {
 		verify(relayService).relay(eq(AiRoute.FEEDBACK), isNull(), isNull(), eq(42L), any());
 		verify(relayService).relay(eq(AiRoute.WIKI), isNull(), any(), eq(42L), isNull());
 		verify(wikiThesisService).update(eq(42L), eq("005930"), any());
-		verify(relayService).relay(eq(AiRoute.WIKI_FACT_DELETE), eq(Map.of("factId", "f1")), isNull(), eq(42L), isNull());
+		verify(relayService).relay(eq(AiRoute.WIKI_FACT_DELETE), eq(Map.of("factId", "f1")), any(), eq(42L), isNull());
 		verify(relayService).relay(eq(AiRoute.CHAT_CONVERSATION_MESSAGES), eq(Map.of("conversationId", "conv_01")), isNull(),
 			eq(42L), isNull());
 		verify(relayService).relay(eq(AiRoute.WIKI_FACT_CONFIRM), eq(Map.of("factId", "f2")), isNull(), eq(42L), isNull());
 		verify(relayService).relay(eq(AiRoute.CHAT_JOB_STATUS), eq(Map.of("jobId", "job_1")), isNull(), eq(42L), isNull());
+	}
+
+	/**
+	 * apiSpec 10.1 (v0.8.21, 이슈 #53) — 프론트가 싣는 {@code reason} 이 중계에서 사라지고 있었다. 그러면 AI 기록이 전부
+	 * {@code user_deleted} 가 되어 추측 거절({@code guess_rejected})과 구분되지 않는다. 값을 해석하지 않고 그대로 넘기는지만 본다 —
+	 * 열거값 판정은 AI 몫이다.
+	 */
+	@Test
+	@DisplayName("DELETE /ai/wiki/facts/{factId} — reason 쿼리를 그대로 넘기고, 없으면 비운 채로 넘긴다")
+	void deleteFactForwardsReason() throws Exception {
+		givenLoggedIn(42L);
+		given(relayService.relay(any(), any(), any(), eq(42L), any()))
+			.willReturn(ResponseEntity.ok(mapper.readTree("{\"content\":{}}")));
+
+		mockMvc.perform(authed(delete("/api/v1/ai/wiki/facts/f1")).param("reason", "guess_rejected"))
+			.andExpect(status().isOk());
+		mockMvc.perform(authed(delete("/api/v1/ai/wiki/facts/f2"))).andExpect(status().isOk());
+
+		ArgumentCaptor<MultiValueMap<String, String>> query = ArgumentCaptor.forClass(MultiValueMap.class);
+		verify(relayService).relay(eq(AiRoute.WIKI_FACT_DELETE), eq(Map.of("factId", "f1")), query.capture(), eq(42L),
+			isNull());
+		org.assertj.core.api.Assertions.assertThat(query.getValue().getFirst("reason")).isEqualTo("guess_rejected");
+		// 기본값을 컨트롤러가 채우지 않는다 — 비어 있으면 AI 쪽 시그니처의 user_deleted 가 선다.
+		verify(relayService).relay(eq(AiRoute.WIKI_FACT_DELETE), eq(Map.of("factId", "f2")), query.capture(), eq(42L),
+			isNull());
+		org.assertj.core.api.Assertions.assertThat(query.getValue().getFirst("reason")).isNull();
 	}
 
 	/** apiSpec 10.1 (v0.8.8, 이슈 #56) — 매수 이유를 처음 적는 경로. 경로 변수가 없고 종목은 본문의 ticker 다. */
