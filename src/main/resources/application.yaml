@@ -90,6 +90,17 @@ management:
         # 켜지 않으면 exposure 에 prometheus 를 넣어도 엔드포인트 자체가 만들어지지 않아 404 가 나고,
         # Prometheus 는 에러 없이 빈 스크레이프만 계속한다 (infraSpec §6.1)
         enabled: true
+  metrics:
+    distribution:
+      # micrometer 는 기본적으로 _count 와 _sum 만 내보낸다. 분위수 계산에 필요한 _bucket 은
+      # 카디널리티가 커서 명시적으로 켜야 나온다. 이것이 없으면 Grafana 의 p95 패널이
+      # histogram_quantile 에 넣을 시계열을 못 찾아 빈 그래프를 그린다 (FINCH-189).
+      percentiles-histogram:
+        http.server.requests: true
+      # 경계를 주지 않으면 micrometer 가 기본 버킷을 넓게 만들어 시계열이 uri 수만큼 배로 늘어난다.
+      # 다섯 개로 묶어 카디널리티를 제한한다.
+      slo:
+        http.server.requests: 100ms, 300ms, 500ms, 1s, 3s
 
 # 우리가 정한 값은 전부 finch.* 아래 둔다 (FinchProperties 주석).
 finch:
