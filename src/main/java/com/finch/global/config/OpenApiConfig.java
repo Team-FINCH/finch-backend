@@ -33,7 +33,7 @@ public class OpenApiConfig {
 			.info(new Info()
 				.title("FINCH API")
 				.version("v1")
-				.description("FINCH 모의투자 서비스 공개 API. 기준 문서: docs/api/apiSpec.md")
+				.description("FINCH 공개 API. 기준 문서: docs/api/apiSpec.md")
 				.contact(new Contact().name("FINCH Team"))
 				.license(new License().name("Private project")))
 			.servers(List.of(
