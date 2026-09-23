@@ -31,10 +31,10 @@ public class OpenApiConfig {
 	OpenAPI finchOpenApi() {
 		return new OpenAPI()
 			.info(new Info()
-				.title("Finch API")
+				.title("FINCH API")
 				.version("v1")
-				.description("Finch 모의투자 서비스 공개 API. 기준 문서: docs/api/apiSpec.md")
-				.contact(new Contact().name("Finch Team"))
+				.description("FINCH 모의투자 서비스 공개 API. 기준 문서: docs/api/apiSpec.md")
+				.contact(new Contact().name("FINCH Team"))
 				.license(new License().name("Private project")))
 			.servers(List.of(
 				new Server().url(SERVER_URL).description("Swagger 를 연 주소 (운영 https://finchapp.org · 로컬 http://localhost:8080)")))
