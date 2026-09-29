@@ -10,6 +10,36 @@
 
 > 담당: 서동혁 [@weeast1521](https://github.com/weeast1521)
 
+## 아키텍처
+
+```mermaid
+flowchart TB
+    FE["Frontend"] -->|"/api/v1 · JWT"| SEC["Spring Security<br/>JWT 필터"]
+    SEC --> IDEM["멱등 키 필터<br/>Idempotency-Key"]
+    IDEM --> CTRL["도메인 컨트롤러"]
+
+    CTRL --> ORD["주문 · 입출금"] --> LED[("ledger_entry<br/>원장")]
+    CTRL --> PF["포트폴리오 · 잔고<br/>원장에서 계산"]
+    PF --> LED
+    CTRL --> PR["시세 조회"]
+    CTRL --> REL["AI 중계<br/>WebClient"] --> AI["AI 서버"]
+
+    subgraph FEED["시세 수신"]
+        LL{"LeaderLock<br/>Redis"} -->|리더 파드만| WS["한국투자증권<br/>실시간 WebSocket"]
+        POLL["REST 폴링<br/>폴백"]
+    end
+    WS --> PC[("PriceCache<br/>Redis")]
+    POLL --> PC
+    PR --> PC
+    ORD -->|체결가| PC
+
+    AI -->|"/internal/v1 · X-Internal-Token"| INT["내부 API<br/>읽기 전용"] --> LED
+    IDEM -.-> RD[("Redis<br/>처리 중 · 응답 기록")]
+    CTRL -.-> EXT["카카오 OAuth · 카카오페이"]
+```
+
+**요청 한 건이 지나는 길** — JWT 인증 → 멱등 키로 중복 차단 → 도메인 서비스 → 원장 기록. 잔고와 손익은 저장하지 않고 원장에서 매번 계산합니다. 시세는 증권사를 직접 부르지 않고 Redis 캐시만 읽습니다.
+
 ## 설계 원칙
 
 **1. 잔고는 저장하지 않고 계산합니다.**
